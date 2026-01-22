@@ -124,7 +124,6 @@ FROM compile-openms AS run-app
 WORKDIR /app
 COPY assets/ /app/assets
 COPY content/ /app/content
-COPY docs/ /app/docs
 COPY example-data/ /app/example-data
 COPY gdpr_consent/ /app/gdpr_consent
 COPY hooks/ /app/hooks

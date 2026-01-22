@@ -1,10 +1,10 @@
 import streamlit as st
 from src.common.common import page_setup
-from src.Workflow import Workflow
+from src.WorkflowTest import WorkflowTest
 
 
 params = page_setup()
 
-wf = Workflow()
+wf = WorkflowTest()
 
 wf.show_results_section()
