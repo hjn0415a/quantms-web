@@ -62,8 +62,11 @@ class WorkflowTest(WorkflowManager):
             if self.params.get("generate-decoys", True):
                 st.info("""
                 **Decoy Database Settings:**
-                * **decoy_string**: Prefix/suffix for decoy protein accessions
-                * **method**: Method for generating decoys (reverse, shuffle)
+                * **method**: How decoy sequences are generated from target protein sequences.
+                  *Reverse* creates decoys by reversing each sequence, while *shuffle* randomly
+                  rearranges the amino acids. Both methods preserve the amino acid composition
+                  of the original protein, ensuring decoys have similar properties to real sequences
+                  for accurate false discovery rate (FDR) estimation.
                 """)
                 self.ui.input_TOPP(
                     "DecoyDatabase",
@@ -72,7 +75,7 @@ class WorkflowTest(WorkflowManager):
                         "decoy_string_position": "prefix",
                         "method": "reverse",
                     },
-                    include_parameters=["decoy_string", "method"],
+                    include_parameters=["method"],
                 )
 
             comet_info = """
@@ -234,7 +237,7 @@ class WorkflowTest(WorkflowManager):
             # Store in session_state for results section compatibility
             st.session_state["mzML_groups"] = group_map
 
-    def execution(self) -> None:
+    def execution(self) -> bool:
         """
         Refactored TOPP workflow execution:
         - Per-sample: CometAdapter -> PercolatorAdapter -> IDFilter
@@ -245,20 +248,22 @@ class WorkflowTest(WorkflowManager):
         # ================================
         if not self.params.get("mzML-files"):
             st.error("No mzML files selected.")
-            return
+            return False
 
         if not self.params.get("fasta-file"):
             st.error("No FASTA file selected.")
-            return
+            return False
 
         in_mzML = self.file_manager.get_files(self.params["mzML-files"])
         fasta_file = self.file_manager.get_files([self.params["fasta-file"]])[0]
 
         if len(in_mzML) < 1:
             st.error("At least one mzML file is required.")
-            return
+            return False
         
         fasta_path = Path(fasta_file)
+
+        self.logger.log(f"📂 Loaded {len(in_mzML)} sample(s)")
 
         if self.params.get("generate-decoys", True):
             decoy_fasta = fasta_path.with_suffix(".decoy.fasta")
@@ -266,16 +271,21 @@ class WorkflowTest(WorkflowManager):
             decoy_string = self.params.get("DecoyDatabase", {}).get("decoy_string", "rev_")
 
             if not decoy_fasta.exists():
+                self.logger.log("🧬 Generating decoy database...")
                 st.info("Generating decoy FASTA database...")
-                self.executor.run_topp(
+                if not self.executor.run_topp(
                     "DecoyDatabase",
                     {"in": [str(fasta_path)], "out": [str(decoy_fasta)]},
-                )
+                ):
+                    self.logger.log("Workflow stopped due to error")
+                    return False
+                self.logger.log("✅ Decoy database ready")
             st.success(f"Using decoy FASTA: {decoy_fasta.name}")
             database_fasta = decoy_fasta
         else:
             # Get decoy_string from CometAdapter params
             decoy_string = self.params.get("CometAdapter", {}).get("PeptideIndexing:decoy_string", "rev_")
+            self.logger.log("📄 Using existing FASTA database")
             st.info(f"Using original FASTA: {fasta_path.name}")
             database_fasta = fasta_path
         
@@ -292,6 +302,8 @@ class WorkflowTest(WorkflowManager):
 
         for d in [comet_dir, perc_dir, filter_dir, quant_dir]:
             d.mkdir(parents=True, exist_ok=True)
+
+        self.logger.log("📁 Output directories created")
 
         # ================================
         # 2️⃣ File path definitions (per sample)
@@ -313,50 +325,64 @@ class WorkflowTest(WorkflowManager):
             stem = Path(mz).stem
             st.info(f"Processing sample: {stem}")
 
+        self.logger.log("🔬 Starting per-sample processing...")
+
         # --- CometAdapter ---
+        self.logger.log("🔎 Running peptide search...")
         with st.spinner(f"CometAdapter ({stem})"):
             comet_extra_params = {"database": str(database_fasta)}
             if self.params.get("generate-decoys", True):
                 # Propagate decoy_string from DecoyDatabase
                 comet_extra_params["PeptideIndexing:decoy_string"] = decoy_string
 
-            self.executor.run_topp(
+            if not self.executor.run_topp(
                 "CometAdapter",
                 {
                     "in": in_mzML,
                     "out": comet_results,
                 },
                 comet_extra_params,
-            )
+            ):
+                self.logger.log("Workflow stopped due to error")
+                return False
+        self.logger.log("✅ Peptide search complete")
 
         # if not Path(comet_results).exists():
         #     st.error(f"CometAdapter failed for {stem}")
         #     st.stop()
 
         # --- PercolatorAdapter ---
+        self.logger.log("📊 Running rescoring...")
         with st.spinner(f"PercolatorAdapter ({stem})"):
-            self.executor.run_topp(
+            if not self.executor.run_topp(
                 "PercolatorAdapter",
                 {
                     "in": comet_results,
                     "out": percolator_results,
                 },
                 {"decoy_pattern": decoy_string},  # Always propagated from upstream
-            )
-           
+            ):
+                self.logger.log("Workflow stopped due to error")
+                return False
+        self.logger.log("✅ Rescoring complete")
+
         # if not Path(percolator_results[i]).exists():
         #     st.error(f"PercolatorAdapter failed for {stem}")
         #     st.stop()
 
         # --- IDFilter ---
+        self.logger.log("🔧 Filtering identifications...")
         with st.spinner(f"IDFilter ({stem})"):
-            self.executor.run_topp(
+            if not self.executor.run_topp(
                 "IDFilter",
                 {
                     "in": percolator_results,
                     "out": filter_results,
                 },
-            )
+            ):
+                self.logger.log("Workflow stopped due to error")
+                return False
+        self.logger.log("✅ Filtering complete")
 
         # if not Path(filter_results[i]).exists():
         #     st.error(f"IDFilter failed for {stem}")
@@ -367,6 +393,7 @@ class WorkflowTest(WorkflowManager):
         # # ================================
         # # 4️⃣ ProteomicsLFQ (cross-sample)
         # # ================================
+        self.logger.log("📈 Running cross-sample quantification...")
         st.info("Running ProteomicsLFQ (cross-sample quantification)")
 
         quant_mztab = str(quant_dir / "openms_quant.mzTab")
@@ -389,7 +416,7 @@ class WorkflowTest(WorkflowManager):
                 st.write("**combined_ids:**", combined_ids)
                 st.write("**combined_ids type:**", type(combined_ids).__name__)
 
-                self.executor.run_topp(
+                if not self.executor.run_topp(
                         "ProteomicsLFQ",
                         {
                             "in": [in_mzML],
@@ -407,7 +434,10 @@ class WorkflowTest(WorkflowManager):
                             "PeptideQuantification:extract:IM_window": "0.0",
                             "PeptideQuantification:faims:merge_features": "false",
                         }
-                    )
+                    ):
+                    self.logger.log("Workflow stopped due to error")
+                    return False
+        self.logger.log("✅ Quantification complete")
 
         # if not Path(quant_mztab).exists():
         #     st.error("ProteomicsLFQ failed: mzTab not created")
@@ -426,6 +456,8 @@ class WorkflowTest(WorkflowManager):
         st.write(f"- mzTab: {quant_mztab}")
         st.write(f"- consensusXML: {quant_cxml}")
         st.write(f"- MSstats CSV: {quant_msstats}")
+
+        return True
 
     @st.fragment
     def results(self) -> None:
