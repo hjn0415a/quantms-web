@@ -72,7 +72,7 @@ class WorkflowTest(WorkflowManager):
                         "decoy_string_position": "prefix",
                         "method": "reverse",
                     },
-                    include_parameters=["decoy_string", "decoy_string_position", "method"],
+                    include_parameters=["decoy_string", "method"],
                 )
 
             comet_info = """
@@ -88,7 +88,7 @@ class WorkflowTest(WorkflowManager):
             """
             st.info(comet_info)
 
-            comet_include = ["enzyme", "missed_cleavages", "fixed_modifications", "variable_modifications"]
+            comet_include = [":enzyme", "missed_cleavages", "fixed_modifications", "variable_modifications"]
             if not self.params.get("generate-decoys", True):
                 # Only show decoy_string when not generating decoys
                 comet_include.append("PeptideIndexing:decoy_string")
@@ -115,6 +115,7 @@ class WorkflowTest(WorkflowManager):
                     "PeptideIndexing:decoy_string": "rev_"
                 },
                 include_parameters=comet_include,
+                exclude_parameters=["second_enzyme"],
             )
 
         with t[1]:
@@ -137,6 +138,7 @@ class WorkflowTest(WorkflowManager):
                     "post_processing_tdc": "true",
                 },
                 include_parameters=percolator_include,
+                exclude_parameters=["out_type"],
             )
 
         with t[2]:
@@ -153,6 +155,7 @@ class WorkflowTest(WorkflowManager):
                     "score:psm": 0.10,
                 },
                 # include_parameters=["type_peptide", "score:psm"]
+                exclude_parameters=["type_protein"],
             )
 
         with t[3]:
