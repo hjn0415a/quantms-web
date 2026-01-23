@@ -36,7 +36,8 @@ class WorkflowTest(WorkflowManager):
 
     @st.fragment
     def configure(self) -> None:
-        self.ui.select_input_file("mzML-files", multiple=True)
+        # reactive=True so Group Selection tab updates when selection changes
+        self.ui.select_input_file("mzML-files", multiple=True, reactive=True)
         self.ui.select_input_file("fasta-file", multiple=False)
 
         t = st.tabs(["**Identification**", "**Rescoring**", "**Filtering**", "**Quantification**", "**Group Selection**"])
@@ -187,60 +188,48 @@ class WorkflowTest(WorkflowManager):
             if not mzml_keys:
                 st.warning("No mzML files available. Please upload mzML files first.")
                 return
-            
+
             try:
                 mzml_files = self.file_manager.get_files(mzml_keys)
             except ValueError:
                 st.warning("Selected mzML files are not available.")
                 return
 
-            # ================================
-            # 1️⃣ Draft state
-            # ================================
-            if "mzML_groups_draft" not in st.session_state:
-                st.session_state["mzML_groups_draft"] = {
-                    Path(f).name: "" for f in mzml_files
-                }
+            # Current mzML filenames
+            current_filenames = {Path(mz).name for mz in mzml_files}
 
-            # ================================
-            # 2️⃣ Confirmed state 
-            # ================================
-            if "mzML_groups" not in st.session_state:
-                st.session_state["mzML_groups"] = {}
-
-            # ================================
-            # 3️⃣ UI: Per-file group input
-            # ================================
+            # Per-file group input using input_widget (auto-saves to params.json)
             for mz in mzml_files:
-                name = Path(mz).name
-
-                st.session_state["mzML_groups_draft"][name] = st.text_input(
-                    label=f"Group for {name}",
-                    value=st.session_state["mzML_groups_draft"].get(name, ""),
-                    placeholder="e.g. case, control",
-                    key=f"group_input_{name}",
+                filename = Path(mz).name
+                self.ui.input_widget(
+                    key=f"mzML-group-{filename}",
+                    default="",
+                    name=f"Group for {filename}",
+                    widget_type="text",
+                    help="e.g. case, control",
                 )
 
-            # ================================
-            # 4️⃣ Save button
-            # ================================
-            col1, col2 = st.columns([1, 3])
+            # Reload params to get current values
+            self.params = self.parameter_manager.get_parameters_from_json()
 
-            with col1:
-                if st.button("💾 Save Groups", use_container_width=True):
-                    st.session_state["mzML_groups"] = dict(
-                        st.session_state["mzML_groups_draft"]
-                    )
-                    st.success("Group assignment saved!")
+            # Clean up orphaned group params from previously selected files
+            orphaned_keys = [
+                k for k in self.params.keys()
+                if k.startswith("mzML-group-") and k[11:] not in current_filenames
+            ]
+            for key in orphaned_keys:
+                del self.params[key]
+            if orphaned_keys:
+                self.parameter_manager.save_parameters()
 
-            # ================================
-            # 5️⃣ Preview (Finalized values)
-            # ================================
-            if st.session_state["mzML_groups"]:
-                st.markdown("#### 📋 Saved Group Assignment")
-                st.json(st.session_state["mzML_groups"])
-            else:
-                st.info("No group assignment saved yet.")
+            # Build consolidated group map for downstream use
+            group_map = {
+                Path(mz).name: self.params.get(f"mzML-group-{Path(mz).name}", "")
+                for mz in mzml_files
+            }
+
+            # Store in session_state for results section compatibility
+            st.session_state["mzML_groups"] = group_map
 
     def execution(self) -> None:
         """
