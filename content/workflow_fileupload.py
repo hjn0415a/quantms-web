@@ -3,7 +3,7 @@ from src.common.common import page_setup
 from src.WorkflowTest import WorkflowTest
 
 params = page_setup()
-
 wf = WorkflowTest()
 
-wf.show_execution_section()
+st.title("Upload mzML files")
+wf.show_file_upload_section()

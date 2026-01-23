@@ -10,12 +10,22 @@ if "settings" not in st.session_state:
 
 if __name__ == '__main__':
     pages = {
-        "Workflow Test": [
-             st.Page(Path("content", "test_fileupload.py"), title="File Upload", icon="📁"),
-             st.Page(Path("content", "test_parameter.py"), title="Configure", icon="⚙️"),
-             st.Page(Path("content", "test_execution.py"), title="Run", icon="🚀"),
-             st.Page(Path("content", "test_results.py"), title="Results", icon="📊"),
-             st.Page(Path("content", "test_results2.py"), title="Quantification", icon="📊"),
+        "Welcome": [
+            st.Page(Path("content", "quickstart.py"), title="Quickstart", icon="👋"),
+        ],
+        "Workflow": [
+            st.Page(Path("content", "workflow_fileupload.py"), title="File Upload", icon="📁"),
+            st.Page(Path("content", "workflow_configure.py"), title="Configure", icon="⚙️"),
+            st.Page(Path("content", "workflow_run.py"), title="Run", icon="🚀"),
+        ],
+        "Results": [
+            st.Page(Path("content", "results_database_search.py"), title="Database Search", icon="🔬"),
+            st.Page(Path("content", "results_rescoring.py"), title="Rescoring", icon="📈"),
+            st.Page(Path("content", "results_filtered.py"), title="Filtered PSMs", icon="🎯"),
+            st.Page(Path("content", "results_abundance.py"), title="Abundance", icon="📋"),
+            st.Page(Path("content", "results_volcano.py"), title="Volcano", icon="🌋"),
+            st.Page(Path("content", "results_pca.py"), title="PCA", icon="📊"),
+            st.Page(Path("content", "results_heatmap.py"), title="Heatmap", icon="🔥"),
         ],
     }
 
