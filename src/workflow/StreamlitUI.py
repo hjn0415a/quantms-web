@@ -1156,7 +1156,9 @@ class StreamlitUI:
             with open(log_path, "r", encoding="utf-8") as f:
                 content = f.read()
             # Check if workflow finished successfully
-            if not "WORKFLOW FINISHED" in content:
+            if "WORKFLOW FINISHED" in content:
+                st.success("**Workflow completed successfully.**")
+            else:
                 st.error("**Errors occurred, check log file.**")
             st.code(content, language="neon", line_numbers=False)
         elif pid_exists:
