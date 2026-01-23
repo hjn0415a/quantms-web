@@ -75,9 +75,8 @@ st.markdown(
 View identification results, quantification tables, and statistical visualizations.
 """
 )
-st.page_link("content/results_database_search.py", label="Go to Results", icon="📊")
 
-st.markdown("## Results Overview")
+st.markdown("#### Overview")
 
 st.markdown(
     """
