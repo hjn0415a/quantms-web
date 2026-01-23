@@ -42,15 +42,56 @@ class WorkflowTest(WorkflowManager):
         t = st.tabs(["**Identification**", "**Rescoring**", "**Filtering**", "**Quantification**", "**Group Selection**"])
 
         with t[0]:
-            st.info("""
+            # Checkbox for decoy generation
+            # reactive=True ensures the parent configure() fragment re-runs when checkbox changes,
+            # so conditional UI (DecoyDatabase settings) updates immediately
+            self.ui.input_widget(
+                key="generate-decoys",
+                default=True,
+                name="Generate Decoy Database",
+                widget_type="checkbox",
+                help="Generate reversed decoy sequences for FDR calculation. Disable if your FASTA already contains decoys.",
+                reactive=True,
+            )
+
+            # Reload params to get current checkbox value after it was saved
+            self.params = self.parameter_manager.get_parameters_from_json()
+
+            # Show DecoyDatabase settings if generating decoys
+            if self.params.get("generate-decoys", True):
+                st.info("""
+                **Decoy Database Settings:**
+                * **decoy_string**: Prefix/suffix for decoy protein accessions
+                * **method**: Method for generating decoys (reverse, shuffle)
+                """)
+                self.ui.input_TOPP(
+                    "DecoyDatabase",
+                    custom_defaults={
+                        "decoy_string": "rev_",
+                        "decoy_string_position": "prefix",
+                        "method": "reverse",
+                    },
+                    include_parameters=["decoy_string", "decoy_string_position", "method"],
+                )
+
+            comet_info = """
             **Identification (Comet):**
             * **enzyme**: The enzyme used for peptide digestion.
             * **missed_cleavages**: Number of possible cleavage sites missed by the enzyme. It has no effect if enzyme is unspecific cleavage.
             * **fixed_modifications**: Fixed modifications, specified using Unimod (www.unimod.org) terms, e.g. 'Carbamidomethyl (C)' or 'Oxidation (M)'
             * **variable_modifications**: Variable modifications, specified using Unimod (www.unimod.org) terms, e.g. 'Carbamidomethyl (C)' or 'Oxidation (M)'
-            * **PeptideIndexing:decoy_string**: String that was appended (or prefixed - see 'decoy_string_position' flag below) to the accessions 
+            """
+            if not self.params.get("generate-decoys", True):
+                comet_info += """* **PeptideIndexing:decoy_string**: String that was appended (or prefixed - see 'decoy_string_position' flag below) to the accessions
                     in the protein database to indicate decoy proteins.
-            """)
+            """
+            st.info(comet_info)
+
+            comet_include = ["enzyme", "missed_cleavages", "fixed_modifications", "variable_modifications"]
+            if not self.params.get("generate-decoys", True):
+                # Only show decoy_string when not generating decoys
+                comet_include.append("PeptideIndexing:decoy_string")
+
             self.ui.input_TOPP(
                 "CometAdapter",
                 custom_defaults={
@@ -72,17 +113,19 @@ class WorkflowTest(WorkflowManager):
                     "PeptideIndexing:unmatched_action": "warn",
                     "PeptideIndexing:decoy_string": "rev_"
                 },
-                include_parameters=["enzyme", "missed_cleavages","fixed_modifications", "variable_modifications", "PeptideIndexing:decoy_string"],
+                include_parameters=comet_include,
             )
 
         with t[1]:
             st.info("""
             **Rescoring (Percolator):**
-            * **decoy_pattern**: Define the text pattern to identify the decoy proteins and/or PSMs, set this up if the label that identifies the decoys in the database is not the default (Only valid if option -protein_level_fdrs is active).
             * **post_processing_tdc**: Use target-decoy competition to assign q-values and PEPs.
             * **score_type**: Type of the peptide main score
             * **subset_max_train**: Only train an SVM on a subset of <x> PSMs, and use the resulting score vector to evaluate the other PSMs. Recommended when analyzing huge numbers (>1 million) of PSMs. When set to 0, all PSMs are used for training as normal.
             """)
+            # decoy_pattern is always derived from upstream, never shown
+            percolator_include = ["post_processing_tdc", "score_type", "subset_max_train"]
+
             self.ui.input_TOPP(
                 "PercolatorAdapter",
                 custom_defaults={
@@ -92,7 +135,7 @@ class WorkflowTest(WorkflowManager):
                     "score_type": "pep",
                     "post_processing_tdc": "true",
                 },
-                include_parameters=["decoy_pattern", "post_processing_tdc", "score_type", "subset_max_train"],
+                include_parameters=percolator_include,
             )
 
         with t[2]:
@@ -224,19 +267,25 @@ class WorkflowTest(WorkflowManager):
             return
         
         fasta_path = Path(fasta_file)
-        # decoy_fasta = fasta_path.with_suffix(".decoy.fasta")
 
-        # if not decoy_fasta.exists():
-        #     st.info("Generating decoy FASTA database...")
-        #     self.executor.run_topp(
-        #         "DecoyDatabase",
-        #         {
-        #             "in": [str(fasta_path)],
-        #             "out": [str(decoy_fasta)],
-        #         },
-        #     )
+        if self.params.get("generate-decoys", True):
+            decoy_fasta = fasta_path.with_suffix(".decoy.fasta")
+            # Get decoy_string from DecoyDatabase params
+            decoy_string = self.params.get("DecoyDatabase", {}).get("decoy_string", "rev_")
 
-        # st.success(f"Using decoy FASTA: {decoy_fasta.name}")
+            if not decoy_fasta.exists():
+                st.info("Generating decoy FASTA database...")
+                self.executor.run_topp(
+                    "DecoyDatabase",
+                    {"in": [str(fasta_path)], "out": [str(decoy_fasta)]},
+                )
+            st.success(f"Using decoy FASTA: {decoy_fasta.name}")
+            database_fasta = decoy_fasta
+        else:
+            # Get decoy_string from CometAdapter params
+            decoy_string = self.params.get("CometAdapter", {}).get("PeptideIndexing:decoy_string", "rev_")
+            st.info(f"Using original FASTA: {fasta_path.name}")
+            database_fasta = fasta_path
         
         # ================================
         # 1️⃣ Directory setup
@@ -274,16 +323,18 @@ class WorkflowTest(WorkflowManager):
 
         # --- CometAdapter ---
         with st.spinner(f"CometAdapter ({stem})"):
+            comet_extra_params = {"database": str(database_fasta)}
+            if self.params.get("generate-decoys", True):
+                # Propagate decoy_string from DecoyDatabase
+                comet_extra_params["PeptideIndexing:decoy_string"] = decoy_string
+
             self.executor.run_topp(
                 "CometAdapter",
                 {
                     "in": in_mzML,
                     "out": comet_results,
                 },
-                {
-                    # "database": str(decoy_fasta),
-                    "database": str(fasta_path),
-                },
+                comet_extra_params,
             )
 
         # if not Path(comet_results).exists():
@@ -298,6 +349,7 @@ class WorkflowTest(WorkflowManager):
                     "in": comet_results,
                     "out": percolator_results,
                 },
+                {"decoy_pattern": decoy_string},  # Always propagated from upstream
             )
            
         # if not Path(percolator_results[i]).exists():
@@ -355,8 +407,7 @@ class WorkflowTest(WorkflowManager):
                             "out_msstats": [quant_msstats],
                         },
                         {
-                            # "fasta": str(decoy_fasta),
-                            "fasta": str(fasta_path),
+                            "fasta": str(database_fasta),
                             "psmFDR": 0.5,
                             "proteinFDR": 0.5,
                             "threads": 12,
