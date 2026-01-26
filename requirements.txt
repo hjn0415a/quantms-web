@@ -140,7 +140,7 @@ xlsxwriter
 streamlit_plotly_events
 scipy
 scikit-learn
-openms-insight>=0.1.9
+openms-insight>=0.1.10
 polars>=1.0.0
 easypqp>=0.1.34
 pyprophet>=2.2.0
