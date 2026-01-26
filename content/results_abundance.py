@@ -6,6 +6,7 @@ from pathlib import Path
 from scipy.stats import ttest_ind
 from src.common.common import page_setup
 from src.common.results_helpers import get_workflow_dir
+from src.workflow.ParameterManager import ParameterManager
 
 params = page_setup()
 st.title("Abundance Quantification")
@@ -55,7 +56,13 @@ try:
             "Additionally, log2 fold change and p-values are calculated between sample groups."
         )
 
-        group_map = st.session_state.get("mzML_groups", {})
+        param_manager = ParameterManager(workflow_dir)
+        params = param_manager.get_parameters_from_json()
+        group_map = {
+            key[11:]: value  # Remove "mzML-group-" prefix
+            for key, value in params.items()
+            if key.startswith("mzML-group-") and value
+        }
 
         if not group_map:
             st.warning("No group information found. Please define sample groups in the Configure page first.")
