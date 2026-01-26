@@ -1188,13 +1188,19 @@ class StreamlitUI:
                 f"**Workflow log file: {datetime.fromtimestamp(log_path.stat().st_ctime).strftime('%Y-%m-%d %H:%M')} CET**"
             )
             with open(log_path, "r", encoding="utf-8") as f:
-                content = f.read()
+                lines = f.readlines()
+            content = "".join(lines)
             # Check if workflow finished successfully
             if "WORKFLOW FINISHED" in content:
                 st.success("**Workflow completed successfully.**")
             else:
                 st.error("**Errors occurred, check log file.**")
-            st.code(content, language="neon", line_numbers=False)
+            # Apply line limit to static display
+            if log_lines_count == "all":
+                display_lines = lines
+            else:
+                display_lines = lines[-st.session_state.log_lines_count:]
+            st.code("".join(display_lines), language="neon", line_numbers=False)
 
     def _show_queue_status(self, status: dict) -> None:
         """Display queue job status for online mode"""
@@ -1217,17 +1223,9 @@ class StreamlitUI:
             queue_length = status.get("queue_length", "?")
             st.info(f"**Status: {label}** - Your workflow is #{queue_position} in the queue ({queue_length} total jobs)")
 
-            # Visual queue indicator
-            if isinstance(queue_position, int) and isinstance(queue_length, int) and queue_length > 0:
-                progress = 1 - (queue_position / queue_length)
-                st.progress(progress, text=f"Queue position {queue_position} of {queue_length}")
-
         elif job_status == "started":
-            progress = status.get("progress", 0)
             current_step = status.get("current_step", "Processing...")
-            st.info(f"**Status: {label}**")
-            if progress and progress > 0:
-                st.progress(progress, text=current_step or "Processing...")
+            st.info(f"**Status: {label}** - {current_step}")
 
         elif job_status == "finished":
             # Check if the job result indicates success or failure
