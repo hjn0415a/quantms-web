@@ -103,7 +103,12 @@ try:
 
         stats_df = pd.DataFrame(stats_rows)
 
-        all_samples = sorted(df["Sample"].unique())
+        # Order samples by group to match comparison label (group2 first, then group1)
+        # Preserve original file order within each group
+        sample_group_df = df[["Sample", "Group"]].drop_duplicates()
+        group2_samples = sample_group_df[sample_group_df["Group"] == group2]["Sample"].tolist()
+        group1_samples = sample_group_df[sample_group_df["Group"] == group1]["Sample"].tolist()
+        all_samples = group2_samples + group1_samples
         pivot_list = []
 
         for protein, group_df in df.groupby("ProteinName"):
