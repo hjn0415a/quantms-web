@@ -80,6 +80,7 @@ View identification results, quantification tables, and statistical visualizatio
 - **Volcano Plot**: Differential expression analysis visualization
 - **PCA**: Principal component analysis of sample relationships
 - **Heatmap**: Hierarchically clustered expression patterns
+- **Spectral Library**: Download the generated spectral library for DIA/SWATH analysis
 """
 )
 
