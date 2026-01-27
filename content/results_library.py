@@ -31,10 +31,6 @@ library_tsv = library_dir / "spectral_library.tsv"
 if library_tsv.exists():
     st.success("Spectral library available for download.")
 
-    # Show file info
-    file_size = library_tsv.stat().st_size
-    st.metric("File Size", f"{file_size / 1024:.1f} KB")
-
     with open(library_tsv, "rb") as f:
         st.download_button(
             label="Download Spectral Library (TSV)",
