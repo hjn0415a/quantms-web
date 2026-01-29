@@ -16,11 +16,11 @@ env:
   OPENMS_VERSION: 3.5.0 
   PYTHON_VERSION: 3.11.0
   # Name of the installer
-  APP_NAME: OpenMS-StreamlitTemplateApp
+  APP_NAME: quantms-web-DDA-LFQ
   # Define unique GUID for UpgradeCode
   APP_UpgradeCode: "8d28e8c7-45dc-446c-b889-99a6aea2f1a5"
   # Define needed TOPP tools here
-  TOPP_TOOLS: "FeatureFinderMetabo FeatureLinkerUnlabeledKD SiriusExport"
+  TOPP_TOOLS: "DecoyDatabase CometAdapter PercolatorAdapter IDFilter ProteomicsLFQ"
 
 jobs:
   build-openms:
