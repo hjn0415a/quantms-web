@@ -19,10 +19,11 @@ jobs:
         python-version: ${{ env.PYTHON_VERSION }}
 
     - name: Setup virtual environment
-      shell: cmd 
+      shell: cmd
       run: |
         python -m venv myenv
-        call myenv\Scripts\activate.bat   
+        call myenv\Scripts\activate.bat
+        pip install cython
         pip install -r requirements.txt
         pip install pyinstaller   
         

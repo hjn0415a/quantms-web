@@ -245,6 +245,9 @@ jobs:
       run: |
         sed -i 's/#import site/import site/' python-${{ env.PYTHON_VERSION }}/python311._pth
 
+    - name: Install Cython (required for pyprophet build)
+      run: .\python-${{ env.PYTHON_VERSION }}\python -m pip install cython --no-warn-script-location
+
     - name: Install Required Packages
       run: .\python-${{ env.PYTHON_VERSION }}\python -m pip install --force-reinstall -r requirements.txt --no-warn-script-location
 
