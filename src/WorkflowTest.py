@@ -6,8 +6,12 @@ from streamlit_plotly_events import plotly_events
 from pyopenms import IdXMLFile
 from scipy.stats import ttest_ind
 import numpy as np
+import mygene
 
+from collections import defaultdict        
+from scipy.stats import fisher_exact         
 from src.workflow.WorkflowManager import WorkflowManager
+from src.common.results_helpers import get_abundance_data
 from src.common.results_helpers import parse_idxml, build_spectra_cache
 from openms_insight import Table, Heatmap, LinePlot, SequenceView
 
@@ -813,9 +817,139 @@ class WorkflowTest(WorkflowManager):
                     return False
         self.logger.log("✅ Quantification complete")
 
-        # if not Path(quant_mztab).exists():
-        #     st.error("ProteomicsLFQ failed: mzTab not created")
-        #     st.stop()
+        # ======================================================
+        # ⚠️ 5️⃣ GO Enrichment Analysis (INLINE IN EXECUTION)
+        # ======================================================
+        st.markdown("---")
+        st.subheader("🧬 GO Enrichment Analysis")
+
+        res = get_abundance_data(st.session_state["workspace"])
+        if res is None:
+            st.warning("GO enrichment skipped: abundance data not available.")
+        else:
+            pivot_df, expr_df, group_map = res
+
+            p_cutoff = 0.05
+            fc_cutoff = 1.0
+
+            analysis_df = pivot_df.dropna(subset=["p-value", "log2FC"]).copy()
+
+            if analysis_df.empty:
+                st.error("No valid statistical data found for GO enrichment.")
+            else:
+                with st.spinner("Fetching GO terms from MyGene.info API..."):
+                    mg = mygene.MyGeneInfo()
+
+                    def get_clean_uniprot(name):
+                        parts = str(name).split("|")
+                        return parts[1] if len(parts) >= 2 else parts[0]
+
+                    analysis_df["UniProt"] = analysis_df["ProteinName"].apply(get_clean_uniprot)
+
+                    bg_ids = analysis_df["UniProt"].dropna().astype(str).unique().tolist()
+                    fg_ids = analysis_df[
+                        (analysis_df["p-value"] < p_cutoff) &
+                        (analysis_df["log2FC"].abs() >= fc_cutoff)
+                    ]["UniProt"].dropna().astype(str).unique().tolist()
+
+                    if len(fg_ids) < 3:
+                        st.warning(
+                            f"Not enough significant proteins "
+                            f"(p < {p_cutoff}, |log2FC| ≥ {fc_cutoff}). "
+                            f"Found: {len(fg_ids)}"
+                        )
+                    else:
+                        res_list = mg.querymany(
+                            bg_ids, scopes="uniprot", fields="go", as_dataframe=False
+                        )
+                        res_go = pd.DataFrame(res_list)
+                        if "notfound" in res_go.columns:
+                            res_go = res_go[res_go["notfound"] != True]
+
+                        def extract_go_terms(go_data, go_type):
+                            if not isinstance(go_data, dict) or go_type not in go_data:
+                                return []
+                            terms = go_data[go_type]
+                            if isinstance(terms, dict):
+                                terms = [terms]
+                            return list({t.get("term") for t in terms if "term" in t})
+
+                        for go_type in ["BP", "CC", "MF"]:
+                            res_go[f"{go_type}_terms"] = res_go["go"].apply(
+                                lambda x: extract_go_terms(x, go_type)
+                            )
+
+                        annotated_ids = set(res_go["query"].astype(str))
+                        fg_set = annotated_ids.intersection(fg_ids)
+                        bg_set = annotated_ids
+
+                        def run_go(go_type):
+                            go2fg = defaultdict(set)
+                            go2bg = defaultdict(set)
+
+                            for _, row in res_go.iterrows():
+                                uid = str(row["query"])
+                                for term in row[f"{go_type}_terms"]:
+                                    go2bg[term].add(uid)
+                                    if uid in fg_set:
+                                        go2fg[term].add(uid)
+
+                            records = []
+                            N_fg = len(fg_set)
+                            N_bg = len(bg_set)
+
+                            for term, fg_genes in go2fg.items():
+                                a = len(fg_genes)
+                                if a == 0:
+                                    continue
+                                b = N_fg - a
+                                c = len(go2bg[term]) - a
+                                d = N_bg - (a + b + c)
+
+                                _, p = fisher_exact([[a, b], [c, d]], alternative="greater")
+                                records.append({
+                                    "GO_Term": term,
+                                    "Count": a,
+                                    "GeneRatio": f"{a}/{N_fg}",
+                                    "p_value": p,
+                                })
+
+                            df = pd.DataFrame(records)
+                            if df.empty:
+                                return None, None
+
+                            df["-log10(p)"] = -np.log10(df["p_value"].replace(0, 1e-10))
+                            df = df.sort_values("p_value").head(20)
+
+                            # ✅ Plotly Figure 생성
+                            fig = px.bar(
+                                df,
+                                x="-log10(p)",
+                                y="GO_Term",
+                                orientation="h",
+                                title=f"GO Enrichment ({go_type})",
+                            )
+
+                            fig.update_layout(
+                                yaxis=dict(autorange="reversed"),
+                                height=500,
+                                margin=dict(l=10, r=10, t=40, b=10),
+                            )
+
+                            return fig, df
+
+                        go_results = {}
+
+                        for go_type in ["BP", "CC", "MF"]:
+                            fig, df_go = run_go(go_type)
+                            if fig is not None:
+                                go_results[go_type] = {
+                                    "fig": fig,
+                                    "df": df_go
+                                }
+
+                        st.session_state["go_results"] = go_results
+                        st.session_state["go_ready"] = True
 
 
         # ================================
