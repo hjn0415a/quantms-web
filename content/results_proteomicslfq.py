@@ -56,40 +56,46 @@ with protein_tab:
         st.dataframe(pivot_df.sort_values("p-value"), use_container_width=True)
 
 # ======================================================
-# GO Enrichment Results (from session_state)
+# GO Enrichment Results 
 # ======================================================
 st.markdown("---")
 st.subheader("🧬 GO Enrichment Analysis")
 
-# GO analysis must be executed in the execution step
-if not st.session_state.get("go_ready", False):
+results_dir = Path(st.session_state["workspace"]) / "topp-workflow" / "results" / "go-terms"
+go_json_file = results_dir / "go_results.json"
+
+if not go_json_file.exists():
     st.info("GO Enrichment results are not available yet. Please run the analysis first.")
 else:
-    go_results = st.session_state.get("go_results", {})
-
-    if not go_results:
-        st.warning("GO Enrichment results are empty.")
-    else:
-        bp_tab, cc_tab, mf_tab = st.tabs([
-            "🧬 Biological Process",
-            "🏠 Cellular Component",
-            "⚙️ Molecular Function",
-        ])
-        
-        # 괄호와 들여쓰기 수정 부분
-        for tab, go_type in zip([bp_tab, cc_tab, mf_tab], ["BP", "CC", "MF"]):
-            with tab:
-                if go_type not in go_results:
-                    st.warning(f"No enriched {go_type} terms found.")
-                    continue
-
-                fig = go_results[go_type].get("fig")
-                df_go = go_results[go_type].get("df")
-
-                if fig is None or df_go is None or df_go.empty:
-                    st.warning(f"No enriched {go_type} terms found.")
-                else:
-                    # 차트 출력 (plotly_chart 사용)
-                    st.plotly_chart(fig, use_container_width=True)
-                    # 데이터프레임 출력
-                    st.dataframe(df_go, use_container_width=True)
+    import json
+    import plotly.io as pio
+    
+    with open(go_json_file, "r") as f:
+        go_data = json.load(f)
+    
+    bp_tab, cc_tab, mf_tab = st.tabs([
+        "🧬 Biological Process",
+        "🏠 Cellular Component",
+        "⚙️ Molecular Function",
+    ])
+    
+    for tab, go_type in zip([bp_tab, cc_tab, mf_tab], ["BP", "CC", "MF"]):
+        with tab:
+            if go_type not in go_data:
+                st.info(f"No enriched {go_type} terms found.")
+                continue
+            
+            fig_json = go_data[go_type]["fig_json"]
+            df_dict = go_data[go_type]["df_dict"]
+            
+            fig = pio.from_json(fig_json)
+            
+            df_go = pd.DataFrame(df_dict)
+            
+            if df_go.empty:
+                st.info(f"No enriched {go_type} terms found.")
+            else:
+                st.plotly_chart(fig, use_container_width=True)
+                
+                st.markdown(f"#### {go_type} Enrichment Results")
+                st.dataframe(df_go, use_container_width=True)
