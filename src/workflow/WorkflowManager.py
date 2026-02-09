@@ -98,9 +98,9 @@ class WorkflowManager:
         try:
             self.logger.log("STARTING WORKFLOW")
             results_dir = Path(self.workflow_dir, "results")
-            if results_dir.exists():
-                shutil.rmtree(results_dir)
-            results_dir.mkdir(parents=True)
+            # if results_dir.exists():
+            #     shutil.rmtree(results_dir)
+            # results_dir.mkdir(parents=True)
             success = self.execution()
             if success:
                 self.logger.log("WORKFLOW FINISHED")

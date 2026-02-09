@@ -145,7 +145,7 @@ polars>=1.0.0
 cython
 easypqp>=0.1.34
 pyprophet>=2.2.0
-
+mygene
 # Redis Queue dependencies (for online mode)
 redis>=5.0.0
 rq>=1.16.0
