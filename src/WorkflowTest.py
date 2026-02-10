@@ -359,8 +359,6 @@ class WorkflowTest(WorkflowManager):
         filter_dir = results_dir / "filter_results"
         quant_dir = results_dir / "quant_results"
 
-        results_dir = Path(self.workflow_dir, "input-files")
-
         for d in [comet_dir, perc_dir, filter_dir, quant_dir]:
             d.mkdir(parents=True, exist_ok=True)
 
