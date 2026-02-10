@@ -835,7 +835,7 @@ class WorkflowTest(WorkflowManager):
 
         return True
     
-    def _run_go_enrichmnet(self, pivot_df: pd.DataFrame, results_dir: Path):
+    def _run_go_enrichment(self, pivot_df: pd.DataFrame, results_dir: Path):
         p_cutoff = 0.05
         fc_cutoff = 1.0
 
@@ -981,7 +981,6 @@ class WorkflowTest(WorkflowManager):
                     go_json_file = go_dir / "go_results.json"
                     with open(go_json_file, "w") as f:
                         json.dump(go_data, f)
-                    
                     st.session_state["go_results"] = go_results
                     st.session_state["go_ready"] = True if go_data else False
                     self.logger.log("✅ GO enrichment analysis complete")
