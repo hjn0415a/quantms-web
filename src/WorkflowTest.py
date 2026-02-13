@@ -80,8 +80,8 @@ class WorkflowTest(WorkflowManager):
                     include_parameters=["method"],
                 )
 
-            comet_info = """
-            **Identification (Comet):**
+            sage_info = """
+            **Identification (sage):**
             * **enzyme**: The enzyme used for peptide digestion.
             * **missed_cleavages**: Number of possible cleavage sites missed by the enzyme. It has no effect if enzyme is unspecific cleavage.
             * **fixed_modifications**: Fixed modifications, specified using Unimod (www.unimod.org) terms, e.g. 'Carbamidomethyl (C)' or 'Oxidation (M)'
@@ -91,40 +91,41 @@ class WorkflowTest(WorkflowManager):
             * **fragment_bin_offset**: Offset for binning MS2 spectra. Typically 0.0 for high-res, 0.4 for low-res instruments.
             """
             if not self.params.get("generate-decoys", True):
-                comet_info += """* **PeptideIndexing:decoy_string**: String that was appended (or prefixed - see 'decoy_string_position' flag below) to the accessions
+                sage_info += """* **PeptideIndexing:decoy_string**: String that was appended (or prefixed - see 'decoy_string_position' flag below) to the accessions
                     in the protein database to indicate decoy proteins.
             """
-            st.info(comet_info)
+            st.info(sage_info)
 
-            comet_include = [":enzyme", "missed_cleavages", "fixed_modifications", "variable_modifications",
-                             "instrument", "fragment_mass_tolerance", "fragment_error_units", "fragment_bin_offset"]
+            sage_include = [":enzyme", "missed_cleavages", "fixed_modifications", "variable_modifications",
+                             "instrument", "fragment_mass_tolerance", "fragment_error_units", "fragment_bin_offset", "PeptideIndexing:IL_equivalent"]
             if not self.params.get("generate-decoys", True):
                 # Only show decoy_string when not generating decoys
-                comet_include.append("PeptideIndexing:decoy_string")
+                sage_include.append("PeptideIndexing:decoy_string")
 
             self.ui.input_TOPP(
-                "CometAdapter",
+                "SageAdapter",
                 custom_defaults={
                     "threads": 8,
                     "instrument": "high_res",
-                    "missed_cleavages": 2,
-                    "min_peptide_length": 6,
-                    "max_peptide_length": 40,
-                    "num_hits": 1,
-                    "num_enzyme_termini": "fully",
-                    "isotope_error": "0/1",
-                    "precursor_charge": "2:4",
-                    "precursor_mass_tolerance": 20.0,
-                    "fragment_mass_tolerance": 0.02,
-                    "fragment_bin_offset": 0.0,
-                    "max_variable_mods_in_peptide": 3,
-                    "minimum_peaks": 1,
-                    "clip_nterm_methionine": "true",
-                    "PeptideIndexing:IL_equivalent": "true",
+                    "decoy_prefix": "rev_",
+                    "min_len": 6,
+                    "max_len": 40,
+                    "min_matched_peaks": 1,
+                    "min_peaks": 1,
+                    "max_peaks": 500,
+                    "precursor_tol_left": -20.0,
+                    "precursor_tol_right": 20.0,
+                    "fragment_tol_left": -0.6,
+                    "fragment_tol_right": 0.6,
+                    "fragment_tol_unit": "Da",
+                    "charges": "2, 4",
+                    "min_peaks": 10,
+                    "max_variable_mods": 3,
+                    "isotope_error_range": "0,1",
+                    # "PeptideIndexing:IL_equivalent": "",
                     "PeptideIndexing:unmatched_action": "warn",
-                    "PeptideIndexing:decoy_string": "rev_",
                 },
-                include_parameters=comet_include,
+                include_parameters=sage_include,
                 exclude_parameters=["second_enzyme"],
             )
 
@@ -296,7 +297,7 @@ class WorkflowTest(WorkflowManager):
     def execution(self) -> bool:
         """
         Refactored TOPP workflow execution:
-        - Per-sample: CometAdapter -> PercolatorAdapter -> IDFilter
+        - Per-sample: sageAdapter -> PercolatorAdapter -> IDFilter
         - Cross-sample: ProteomicsLFQ (single combined output)
         """
         # ================================
@@ -339,8 +340,8 @@ class WorkflowTest(WorkflowManager):
             st.success(f"Using decoy FASTA: {decoy_fasta.name}")
             database_fasta = decoy_fasta
         else:
-            # Get decoy_string from CometAdapter params
-            decoy_string = self.params.get("CometAdapter", {}).get("PeptideIndexing:decoy_string", "rev_")
+            # Get decoy_string from sageAdapter params
+            decoy_string = self.params.get("sageAdapter", {}).get("PeptideIndexing:decoy_string", "rev_")
             self.logger.log("📄 Using existing FASTA database")
             st.info(f"Using original FASTA: {fasta_path.name}")
             database_fasta = fasta_path
@@ -349,14 +350,14 @@ class WorkflowTest(WorkflowManager):
         # 1️⃣ Directory setup
         # ================================
         results_dir = Path(self.workflow_dir, "results")
-        comet_dir = results_dir / "comet_results"
+        sage_dir = results_dir / "sage_results"
         perc_dir = results_dir / "percolator_results"
         filter_dir = results_dir / "filter_results"
         quant_dir = results_dir / "quant_results"
 
         results_dir = Path(self.workflow_dir, "input-files")
 
-        for d in [comet_dir, perc_dir, filter_dir, quant_dir]:
+        for d in [sage_dir, perc_dir, filter_dir, quant_dir]:
             d.mkdir(parents=True, exist_ok=True)
 
         self.logger.log("📁 Output directories created")
@@ -364,13 +365,13 @@ class WorkflowTest(WorkflowManager):
         # ================================
         # 2️⃣ File path definitions (per sample)
         # ================================
-        comet_results = []
+        sage_results = []
         percolator_results = []
         filter_results = []
 
         for mz in in_mzML:
             stem = Path(mz).stem
-            comet_results.append(str(comet_dir / f"{stem}_comet.idXML"))
+            sage_results.append(str(sage_dir / f"{stem}_sage.idXML"))
             percolator_results.append(str(perc_dir / f"{stem}_per.idXML"))
             filter_results.append(str(filter_dir / f"{stem}_filter.idXML"))
 
@@ -383,31 +384,31 @@ class WorkflowTest(WorkflowManager):
 
         self.logger.log("🔬 Starting per-sample processing...")
 
-        # --- CometAdapter ---
+        # --- SageAdapter ---
         self.logger.log("🔎 Running peptide search...")
-        with st.spinner(f"CometAdapter ({stem})"):
-            comet_extra_params = {"database": str(database_fasta)}
+        with st.spinner(f"SageAdapter ({stem})"):
+            sage_extra_params = {"database": str(database_fasta)}
             if self.params.get("generate-decoys", True):
                 # Propagate decoy_string from DecoyDatabase
-                comet_extra_params["PeptideIndexing:decoy_string"] = decoy_string
+                sage_extra_params["PeptideIndexing:decoy_string"] = decoy_string
 
             if not self.executor.run_topp(
-                "CometAdapter",
+                "SageAdapter",
                 {
                     "in": in_mzML,
-                    "out": comet_results,
+                    "out": sage_results,
                 },
-                comet_extra_params,
+                sage_extra_params,
             ):
                 self.logger.log("Workflow stopped due to error")
                 return False
 
-        # Get fragment tolerance from CometAdapter parameters for visualization
-        comet_params = self.parameter_manager.get_topp_parameters("CometAdapter")
-        frag_tol = comet_params.get("fragment_mass_tolerance", 0.02)
-        frag_tol_is_ppm = comet_params.get("fragment_error_units", "Da") != "Da"
+        # Get fragment tolerance from SageAdapter parameters for visualization
+        sage_params = self.parameter_manager.get_topp_parameters("SageAdapter")
+        frag_tol = sage_params.get("fragment_mass_tolerance", 0.02)
+        frag_tol_is_ppm = sage_params.get("fragment_error_units", "Da") != "Da"
 
-        # Build visualization cache for Comet results
+        # Build visualization cache for Sage results
         results_dir_path = Path(self.workflow_dir, "results")
         cache_dir = results_dir_path / "insight_cache"
         cache_dir.mkdir(parents=True, exist_ok=True)
@@ -419,7 +420,7 @@ class WorkflowTest(WorkflowManager):
         spectra_df = None
         filename_to_index = {}
 
-        for idxml_file in comet_results:
+        for idxml_file in sage_results:
             idxml_path = Path(idxml_file)
             cache_id_prefix = idxml_path.stem
 
@@ -499,8 +500,8 @@ class WorkflowTest(WorkflowManager):
 
         self.logger.log("✅ Peptide search complete")
 
-        # if not Path(comet_results).exists():
-        #     st.error(f"CometAdapter failed for {stem}")
+        # if not Path(sage_results).exists():
+        #     st.error(f"sageAdapter failed for {stem}")
         #     st.stop()
 
         # --- PercolatorAdapter ---
@@ -509,7 +510,7 @@ class WorkflowTest(WorkflowManager):
             if not self.executor.run_topp(
                 "PercolatorAdapter",
                 {
-                    "in": comet_results,
+                    "in": sage_results,
                     "out": percolator_results,
                 },
                 {"decoy_pattern": decoy_string},  # Always propagated from upstream
@@ -838,7 +839,7 @@ class WorkflowTest(WorkflowManager):
 
         st.title("📊 Results")
 
-        comet_tab, perc_tab, filter_tab, lfq_tab = st.tabs([
+        sage_tab, perc_tab, filter_tab, lfq_tab = st.tabs([
             "🔍 Identification",
             "🔍 Rescoring",
             "🔍 Filtering",
@@ -846,18 +847,18 @@ class WorkflowTest(WorkflowManager):
         ])
 
         # ================================
-        # 🔍 CometAdapter
+        # 🔍 SageAdapter
         # ================================
-        with comet_tab:
+        with sage_tab:
 
-            comet_dir = Path(self.workflow_dir, "results", "comet_results")
-            comet_files = sorted(comet_dir.glob("*.idXML"))
+            sage_dir = Path(self.workflow_dir, "results", "sage_results")
+            sage_files = sorted(sage_dir.glob("*.idXML"))
 
-            if not comet_files:
+            if not sage_files:
                 st.warning("⚠ No Identification output files found.")
                 return
 
-            selected_file = st.selectbox("📁 Select Identification result file", comet_files)
+            selected_file = st.selectbox("📁 Select Identification result file", sage_files)
 
             def idxml_to_df(idxml_file):
                 proteins = []
@@ -918,7 +919,7 @@ class WorkflowTest(WorkflowManager):
                 hovermode="closest"
             )
 
-            clicked = plotly_events(fig, click_event=True, hover_event=False, override_height=550, key="comet_plot")
+            clicked = plotly_events(fig, click_event=True, hover_event=False, override_height=550, key="sage_plot")
 
             if clicked:
                 row_index = clicked[0]["pointNumber"]
