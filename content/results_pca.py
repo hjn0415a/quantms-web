@@ -33,8 +33,8 @@ top_n = 500
 
 top_proteins = (
     pivot_df
-    .dropna(subset=["p-value"])
-    .sort_values("p-value", ascending=True)
+    .dropna(subset=["p-adj"])
+    .sort_values("p-adj", ascending=True)
     .head(top_n)["ProteinName"]
 )
 
@@ -81,7 +81,7 @@ fig_pca.update_layout(
 
 st.plotly_chart(fig_pca, use_container_width=True)
 
-st.markdown(f"**Proteins used:** {expr_df_pca.shape[0]} (top {top_n} by p-value)")
+st.markdown(f"**Proteins used:** {expr_df_pca.shape[0]} (top {top_n} by p-adj)")
 
 st.markdown("---")
 st.markdown("**Other visualizations:**")
