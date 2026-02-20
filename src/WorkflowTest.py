@@ -45,6 +45,15 @@ class WorkflowTest(WorkflowManager):
         t = st.tabs(["**Identification**", "**Rescoring**", "**Filtering**", "**Library Generation**", "**Quantification**", "**Group Selection**"])
 
         with t[0]:
+            self.ui.input_widget(
+                key="search-engine",
+                default="comet",
+                name="Search Engine",
+                widget_type="selectbox",
+                options=["comet", "sage"],
+                help="Select which search engine to use for identification.",
+                reactive=True,
+            )
             # Checkbox for decoy generation
             # reactive=True ensures the parent configure() fragment re-runs when checkbox changes,
             # so conditional UI (DecoyDatabase settings) updates immediately
@@ -59,6 +68,7 @@ class WorkflowTest(WorkflowManager):
 
             # Reload params to get current checkbox value after it was saved
             self.params = self.parameter_manager.get_parameters_from_json()
+            search_engine = self.params.get("search-engine", "comet")
 
             # Show DecoyDatabase settings if generating decoys
             if self.params.get("generate-decoys", True):
@@ -80,54 +90,113 @@ class WorkflowTest(WorkflowManager):
                     include_parameters=["method"],
                 )
 
-            sage_info = """
-            **Identification (sage):**
-            * **enzyme**: The enzyme used for peptide digestion.
-            * **missed_cleavages**: Number of possible cleavage sites missed by the enzyme. It has no effect if enzyme is unspecific cleavage.
-            * **fixed_modifications**: Fixed modifications, specified using Unimod (www.unimod.org) terms, e.g. 'Carbamidomethyl (C)' or 'Oxidation (M)'
-            * **variable_modifications**: Variable modifications, specified using Unimod (www.unimod.org) terms, e.g. 'Carbamidomethyl (C)' or 'Oxidation (M)'
-            * **instrument**: Type of instrument (high_res or low_res). Use 'high_res' for high-resolution MS2 (Orbitrap, TOF), 'low_res' for ion trap.
-            * **fragment_mass_tolerance**: Fragment mass tolerance for MS2 matching.
-            * **fragment_bin_offset**: Offset for binning MS2 spectra. Typically 0.0 for high-res, 0.4 for low-res instruments.
-            """
-            if not self.params.get("generate-decoys", True):
-                sage_info += """* **PeptideIndexing:decoy_string**: String that was appended (or prefixed - see 'decoy_string_position' flag below) to the accessions
-                    in the protein database to indicate decoy proteins.
-            """
-            st.info(sage_info)
+            if search_engine == "comet":
+                ident_info = """
+                **Identification (comet):**
+                * **enzyme**: The enzyme used for peptide digestion.
+                * **missed_cleavages**: Number of possible cleavage sites missed by the enzyme. It has no effect if enzyme is unspecific cleavage.
+                * **fixed_modifications**: Fixed modifications, specified using Unimod (www.unimod.org) terms, e.g. 'Carbamidomethyl (C)' or 'Oxidation (M)'
+                * **variable_modifications**: Variable modifications, specified using Unimod (www.unimod.org) terms, e.g. 'Carbamidomethyl (C)' or 'Oxidation (M)'
+                * **instrument**: Type of instrument (high_res or low_res). Use 'high_res' for high-resolution MS2 (Orbitrap, TOF), 'low_res' for ion trap.
+                * **fragment_mass_tolerance**: Fragment mass tolerance for MS2 matching.
+                * **fragment_bin_offset**: Offset for binning MS2 spectra. Typically 0.0 for high-res, 0.4 for low-res instruments.
+                """
+                if not self.params.get("generate-decoys", True):
+                    ident_info += """* **PeptideIndexing:decoy_string**: String that was appended (or prefixed - see 'decoy_string_position' flag below) to the accessions
+                        in the protein database to indicate decoy proteins.
+                """
+                st.info(ident_info)
 
-            sage_include = [":enzyme", "missed_cleavages", "fixed_modifications", "variable_modifications",
-                             "instrument", "fragment_mass_tolerance", "fragment_error_units", "fragment_bin_offset", "PeptideIndexing:IL_equivalent"]
-            if not self.params.get("generate-decoys", True):
-                # Only show decoy_string when not generating decoys
-                sage_include.append("PeptideIndexing:decoy_string")
+                st.info("### 🔬 Identification using Comet")
 
-            self.ui.input_TOPP(
-                "SageAdapter",
-                custom_defaults={
-                    "threads": 8,
-                    "instrument": "high_res",
-                    "decoy_prefix": "rev_",
-                    "min_len": 6,
-                    "max_len": 40,
-                    "min_matched_peaks": 1,
-                    "min_peaks": 1,
-                    "max_peaks": 500,
-                    "precursor_tol_left": -20.0,
-                    "precursor_tol_right": 20.0,
-                    "fragment_tol_left": -0.6,
-                    "fragment_tol_right": 0.6,
-                    "fragment_tol_unit": "Da",
-                    "charges": "2, 4",
-                    "min_peaks": 10,
-                    "max_variable_mods": 3,
-                    "isotope_error_range": "0,1",
-                    # "PeptideIndexing:IL_equivalent": "",
-                    "PeptideIndexing:unmatched_action": "warn",
-                },
-                include_parameters=sage_include,
-                exclude_parameters=["second_enzyme"],
-            )
+                comet_include = [
+                    "enzyme",
+                    "missed_cleavages",
+                    "variable_modifications",
+                    "precursor_mass_tolerance",
+                    "fragment_mass_tolerance",
+                    "fragment_bin_offset",
+                    "precursor_charge",
+                    "num_hits",
+                ]
+
+                self.ui.input_TOPP(
+                    "CometAdapter",
+                    custom_defaults={
+                        "threads": 8,
+                        "instrument": "high_res",
+                        "missed_cleavages": 2,
+                        "min_peptide_length": 6,
+                        "max_peptide_length": 40,
+                        "num_hits": 1,
+                        "num_enzyme_termini": "fully",
+                        "isotope_error": "0/1",
+                        "precursor_charge": "2:4",
+                        "precursor_mass_tolerance": 20.0,
+                        "fragment_mass_tolerance": 0.02,
+                        "fragment_bin_offset": 0.0,
+                        "max_variable_mods_in_peptide": 3,
+                        "minimum_peaks": 1,
+                        "clip_nterm_methionine": "true",
+                        "PeptideIndexing:IL_equivalent": "true",
+                        "PeptideIndexing:unmatched_action": "warn",
+                        "PeptideIndexing:decoy_string": "rev_",
+                    },
+                    include_parameters=comet_include,
+                    exclude_parameters=["second_enzyme"],
+                )
+
+            elif search_engine == "sage":
+
+                ident_info = """
+                **Identification (sage):**
+                * **enzyme**: The enzyme used for peptide digestion.
+                * **missed_cleavages**: Number of possible cleavage sites missed by the enzyme. It has no effect if enzyme is unspecific cleavage.
+                * **fixed_modifications**: Fixed modifications, specified using Unimod (www.unimod.org) terms, e.g. 'Carbamidomethyl (C)' or 'Oxidation (M)'
+                * **variable_modifications**: Variable modifications, specified using Unimod (www.unimod.org) terms, e.g. 'Carbamidomethyl (C)' or 'Oxidation (M)'
+                * **instrument**: Type of instrument (high_res or low_res). Use 'high_res' for high-resolution MS2 (Orbitrap, TOF), 'low_res' for ion trap.
+                * **fragment_mass_tolerance**: Fragment mass tolerance for MS2 matching.
+                * **fragment_bin_offset**: Offset for binning MS2 spectra. Typically 0.0 for high-res, 0.4 for low-res instruments.
+                """
+                if not self.params.get("generate-decoys", True):
+                    ident_info += """* **PeptideIndexing:decoy_string**: String that was appended (or prefixed - see 'decoy_string_position' flag below) to the accessions
+                        in the protein database to indicate decoy proteins.
+                """
+                st.info(ident_info)
+
+                st.info("### 🔬 Identification using Sage")
+
+                sage_include = [":enzyme", "missed_cleavages", "fixed_modifications", "variable_modifications",
+                                "instrument", "fragment_mass_tolerance", "fragment_error_units", "fragment_bin_offset", "PeptideIndexing:IL_equivalent"]
+                if not self.params.get("generate-decoys", True):
+                    # Only show decoy_string when not generating decoys
+                    sage_include.append("PeptideIndexing:decoy_string")
+
+                self.ui.input_TOPP(
+                    "SageAdapter",
+                    custom_defaults={
+                        "threads": 8,
+                        "instrument": "high_res",
+                        "decoy_prefix": "rev_",
+                        "min_len": 6,
+                        "max_len": 40,
+                        "min_matched_peaks": 1,
+                        "min_peaks": 1,
+                        "max_peaks": 500,
+                        "precursor_tol_left": -20.0,
+                        "precursor_tol_right": 20.0,
+                        "fragment_tol_left": -0.6,
+                        "fragment_tol_right": 0.6,
+                        "fragment_tol_unit": "Da",
+                        "charges": "2, 4",
+                        "min_peaks": 10,
+                        "max_variable_mods": 3,
+                        "isotope_error_range": "0,1",
+                        "PeptideIndexing:unmatched_action": "warn",
+                    },
+                    include_parameters=sage_include,
+                    exclude_parameters=["second_enzyme"],
+                )
 
         with t[1]:
             st.info("""
@@ -295,6 +364,9 @@ class WorkflowTest(WorkflowManager):
                 self.parameter_manager.save_parameters()
 
     def execution(self) -> bool:
+        search_engine = self.params.get("search-engine", "comet")
+        self.logger.log(f"🔍 Selected search engine: {search_engine}")
+
         """
         Refactored TOPP workflow execution:
         - Per-sample: sageAdapter -> PercolatorAdapter -> IDFilter
@@ -349,15 +421,17 @@ class WorkflowTest(WorkflowManager):
         # ================================
         # 1️⃣ Directory setup
         # ================================
+        engine_suffix = "comet" if search_engine == "comet" else "sage"
+
         results_dir = Path(self.workflow_dir, "results")
-        sage_dir = results_dir / "sage_results"
+        search_dir = results_dir / f"{engine_suffix}_results"
         perc_dir = results_dir / "percolator_results"
         filter_dir = results_dir / "filter_results"
         quant_dir = results_dir / "quant_results"
 
         results_dir = Path(self.workflow_dir, "input-files")
 
-        for d in [sage_dir, perc_dir, filter_dir, quant_dir]:
+        for d in [search_dir, perc_dir, filter_dir, quant_dir]:
             d.mkdir(parents=True, exist_ok=True)
 
         self.logger.log("📁 Output directories created")
@@ -365,13 +439,13 @@ class WorkflowTest(WorkflowManager):
         # ================================
         # 2️⃣ File path definitions (per sample)
         # ================================
-        sage_results = []
+        search_results = []
         percolator_results = []
         filter_results = []
 
         for mz in in_mzML:
             stem = Path(mz).stem
-            sage_results.append(str(sage_dir / f"{stem}_sage.idXML"))
+            search_results.append(str(search_dir / f"{stem}_{engine_suffix}.idXML"))
             percolator_results.append(str(perc_dir / f"{stem}_per.idXML"))
             filter_results.append(str(filter_dir / f"{stem}_filter.idXML"))
 
@@ -383,20 +457,21 @@ class WorkflowTest(WorkflowManager):
             st.info(f"Processing sample: {stem}")
 
         self.logger.log("🔬 Starting per-sample processing...")
+        search_tool = "CometAdapter" if search_engine == "comet" else "SageAdapter"
 
-        # --- SageAdapter ---
-        self.logger.log("🔎 Running peptide search...")
-        with st.spinner(f"SageAdapter ({stem})"):
+        # --- Identification (Comet / Sage) ---
+        self.logger.log(f"🔎 Running peptide search with {search_tool}...")
+        with st.spinner(f"{search_tool} ({stem})"):
             sage_extra_params = {"database": str(database_fasta)}
             if self.params.get("generate-decoys", True):
                 # Propagate decoy_string from DecoyDatabase
                 sage_extra_params["PeptideIndexing:decoy_string"] = decoy_string
 
             if not self.executor.run_topp(
-                "SageAdapter",
+                search_tool,
                 {
                     "in": in_mzML,
-                    "out": sage_results,
+                    "out": search_results,
                 },
                 sage_extra_params,
             ):
@@ -404,9 +479,14 @@ class WorkflowTest(WorkflowManager):
                 return False
 
         # Get fragment tolerance from SageAdapter parameters for visualization
-        sage_params = self.parameter_manager.get_topp_parameters("SageAdapter")
-        frag_tol = sage_params.get("fragment_mass_tolerance", 0.02)
-        frag_tol_is_ppm = sage_params.get("fragment_error_units", "Da") != "Da"
+        topp_params = self.parameter_manager.get_topp_parameters(search_tool)
+
+        if search_engine == "comet":
+            frag_tol = topp_params.get("fragment_mass_tolerance", 0.02)
+            frag_tol_is_ppm = topp_params.get("fragment_error_units", "Da") != "Da"
+        else:
+            frag_tol = topp_params.get("fragment_mass_tolerance", 0.02)
+            frag_tol_is_ppm = False
 
         # Build visualization cache for Sage results
         results_dir_path = Path(self.workflow_dir, "results")
@@ -420,7 +500,7 @@ class WorkflowTest(WorkflowManager):
         spectra_df = None
         filename_to_index = {}
 
-        for idxml_file in sage_results:
+        for idxml_file in search_results:
             idxml_path = Path(idxml_file)
             cache_id_prefix = idxml_path.stem
 
@@ -500,17 +580,13 @@ class WorkflowTest(WorkflowManager):
 
         self.logger.log("✅ Peptide search complete")
 
-        # if not Path(sage_results).exists():
-        #     st.error(f"sageAdapter failed for {stem}")
-        #     st.stop()
-
         # --- PercolatorAdapter ---
         self.logger.log("📊 Running rescoring...")
         with st.spinner(f"PercolatorAdapter ({stem})"):
             if not self.executor.run_topp(
                 "PercolatorAdapter",
                 {
-                    "in": sage_results,
+                    "in": search_results,
                     "out": percolator_results,
                 },
                 {"decoy_pattern": decoy_string},  # Always propagated from upstream
@@ -839,7 +915,10 @@ class WorkflowTest(WorkflowManager):
 
         st.title("📊 Results")
 
-        sage_tab, perc_tab, filter_tab, lfq_tab = st.tabs([
+        search_engine = self.params.get("search-engine", "comet")
+        engine_suffix = "comet" if search_engine == "comet" else "sage"
+
+        ident_tab, perc_tab, filter_tab, lfq_tab = st.tabs([
             "🔍 Identification",
             "🔍 Rescoring",
             "🔍 Filtering",
@@ -847,18 +926,18 @@ class WorkflowTest(WorkflowManager):
         ])
 
         # ================================
-        # 🔍 SageAdapter
+        # 🔍 Identification (Comet / Sage)
         # ================================
-        with sage_tab:
+        with ident_tab:
 
-            sage_dir = Path(self.workflow_dir, "results", "sage_results")
-            sage_files = sorted(sage_dir.glob("*.idXML"))
+            search_dir = Path(self.workflow_dir, "results", f"{engine_suffix}_results")
+            search_files = sorted(search_dir.glob("*.idXML"))
 
-            if not sage_files:
+            if not search_files:
                 st.warning("⚠ No Identification output files found.")
                 return
 
-            selected_file = st.selectbox("📁 Select Identification result file", sage_files)
+            selected_file = st.selectbox("📁 Select Identification result file", search_files)
 
             def idxml_to_df(idxml_file):
                 proteins = []
