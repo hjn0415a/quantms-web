@@ -609,6 +609,7 @@ class StreamlitUI:
     def input_TOPP(
         self,
         topp_tool_name: str,
+        tool_instance_name: str = None,
         num_cols: int = 4,
         exclude_parameters: List[str] = [],
         include_parameters: List[str] = [],
@@ -632,6 +633,9 @@ class StreamlitUI:
             display_subsection_tabs (bool, optional): Whether to display main subsections in separate tabs (if more than one main section). Defaults to False.
             custom_defaults (dict, optional): Dictionary of custom defaults to use. Defaults to an empty dict.
         """
+        # 1. tool_instance_name이 없으면 기본 툴 이름 사용
+        if tool_instance_name is None:
+            tool_instance_name = topp_tool_name
 
         if not display_subsections:
             display_subsection_tabs = False
@@ -807,7 +811,8 @@ class StreamlitUI:
             i = 0
             for p in params:
                 # get key and name
-                key = f"{self.parameter_manager.topp_param_prefix}{p['key'].decode()}"
+                base_key_str = p['key'].decode()
+                unique_key = f"{self.parameter_manager.topp_param_prefix}{tool_instance_name}:{base_key_str}"
                 name = p["name"]
                 try:
                     # sometimes strings with newline, handle as list
@@ -824,7 +829,7 @@ class StreamlitUI:
                                 else p["value"]
                             ),
                             help=p["description"],
-                            key=key,
+                            key=unique_key,
                         )
 
                     # strings
@@ -836,17 +841,17 @@ class StreamlitUI:
                                 options=p["valid_strings"],
                                 index=p["valid_strings"].index(p["value"]),
                                 help=p["description"],
-                                key=key,
+                                key=unique_key,
                             )
                         else:
                             cols[i].text_input(
-                                name, value=p["value"], help=p["description"], key=key
+                                name, value=p["value"], help=p["description"], key=unique_key
                             )
 
                     # ints
                     elif isinstance(p["value"], int):
                         cols[i].number_input(
-                            name, value=int(p["value"]), help=p["description"], key=key
+                            name, value=int(p["value"]), help=p["description"], key=unique_key
                         )
 
                     # floats
@@ -856,7 +861,7 @@ class StreamlitUI:
                             value=float(p["value"]),
                             step=1.0,
                             help=p["description"],
-                            key=key,
+                            key=unique_key,
                         )
 
                     # lists
@@ -872,9 +877,9 @@ class StreamlitUI:
                             current_values = [v for v in p["value"] if v in p['valid_strings']]
 
                             # Use a display key for multiselect (stores list), sync to main key (stores string)
-                            display_key = f"{key}_display"
+                            display_key = f"{unique_key}_display"
 
-                            def on_multiselect_change(dk=display_key, tk=key):
+                            def on_multiselect_change(dk=display_key, tk=unique_key):
                                 st.session_state[tk] = "\n".join(st.session_state[dk])
 
                             cols[i].multiselect(
@@ -887,15 +892,15 @@ class StreamlitUI:
                             )
 
                             # Ensure main key has string value for ParameterManager
-                            if key not in st.session_state:
-                                st.session_state[key] = "\n".join(current_values)
+                            if unique_key not in st.session_state:
+                                st.session_state[unique_key] = "\n".join(current_values)
                         else:
                             # Fall back to text_area for freeform list input
                             cols[i].text_area(
                                 name,
                                 value="\n".join([str(val) for val in p["value"]]),
                                 help=p["description"] + " Separate entries using the \"Enter\" key.",
-                                key=key,
+                                key=unique_key,
                             )
 
                     # increment number of columns, create new cols object if end of line is reached
