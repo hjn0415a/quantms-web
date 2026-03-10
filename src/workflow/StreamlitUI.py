@@ -641,12 +641,15 @@ class StreamlitUI:
         # write defaults ini files
         ini_file_path = Path(self.parameter_manager.ini_dir, f"{topp_tool_name}.ini")
         ini_existed = ini_file_path.exists()
+        print(f"ini_file_path: {ini_file_path}")
         if not self.parameter_manager.create_ini(topp_tool_name):
             st.error(f"TOPP tool **'{topp_tool_name}'** not found.")
             return
         if not ini_existed:
+            print(f"ini_existed: {ini_existed}")
             # update custom defaults if necessary
             if custom_defaults:
+                print(f"{topp_tool_name} custom_defaults: {custom_defaults}")
                 param = poms.Param()
                 poms.ParamXMLFile().load(str(ini_file_path), param)
                 for key, value in custom_defaults.items():

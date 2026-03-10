@@ -42,18 +42,20 @@ class WorkflowTest(WorkflowManager):
         self.ui.select_input_file("mzML-files", multiple=True, reactive=True)
         self.ui.select_input_file("fasta-file", multiple=False)
 
-        t = st.tabs(["**Identification**", "**Rescoring**", "**Filtering**", "**Library Generation**", "**Quantification**", "**Group Selection**"])
+        t = st.tabs([
+            "**IsobaricAnalyzer**", 
+            "**CometAdapter**", 
+            "**PercolatorAdapter**", 
+            "**IDFilter**", 
+            "**IDMapper**", 
+            "**FileMerger**", 
+            "**ProteinInference**",
+            "**IDFilter**", 
+            "**IDConflictResolver**",
+            "**ProteinQuantifier**",
+            "**Group Selection**"])
 
         with t[0]:
-            self.ui.input_widget(
-                key="search-engine",
-                default="comet",
-                name="Search Engine",
-                widget_type="selectbox",
-                options=["comet", "sage"],
-                help="Select which search engine to use for identification.",
-                reactive=True,
-            )
             # Checkbox for decoy generation
             # reactive=True ensures the parent configure() fragment re-runs when checkbox changes,
             # so conditional UI (DecoyDatabase settings) updates immediately
@@ -68,7 +70,6 @@ class WorkflowTest(WorkflowManager):
 
             # Reload params to get current checkbox value after it was saved
             self.params = self.parameter_manager.get_parameters_from_json()
-            search_engine = self.params.get("search-engine", "comet")
 
             # Show DecoyDatabase settings if generating decoys
             if self.params.get("generate-decoys", True):
@@ -90,113 +91,42 @@ class WorkflowTest(WorkflowManager):
                     include_parameters=["method"],
                 )
 
-            if search_engine == "comet":
-                ident_info = """
-                **Identification (comet):**
-                * **enzyme**: The enzyme used for peptide digestion.
-                * **missed_cleavages**: Number of possible cleavage sites missed by the enzyme. It has no effect if enzyme is unspecific cleavage.
-                * **fixed_modifications**: Fixed modifications, specified using Unimod (www.unimod.org) terms, e.g. 'Carbamidomethyl (C)' or 'Oxidation (M)'
-                * **variable_modifications**: Variable modifications, specified using Unimod (www.unimod.org) terms, e.g. 'Carbamidomethyl (C)' or 'Oxidation (M)'
-                * **instrument**: Type of instrument (high_res or low_res). Use 'high_res' for high-resolution MS2 (Orbitrap, TOF), 'low_res' for ion trap.
-                * **fragment_mass_tolerance**: Fragment mass tolerance for MS2 matching.
-                * **fragment_bin_offset**: Offset for binning MS2 spectra. Typically 0.0 for high-res, 0.4 for low-res instruments.
-                """
-                if not self.params.get("generate-decoys", True):
-                    ident_info += """* **PeptideIndexing:decoy_string**: String that was appended (or prefixed - see 'decoy_string_position' flag below) to the accessions
-                        in the protein database to indicate decoy proteins.
-                """
-                st.info(ident_info)
+            comet_info = """
+            **Identification (Comet):**
+            * **enzyme**: The enzyme used for peptide digestion.
+            * **missed_cleavages**: Number of possible cleavage sites missed by the enzyme. It has no effect if enzyme is unspecific cleavage.
+            * **fixed_modifications**: Fixed modifications, specified using Unimod (www.unimod.org) terms, e.g. 'Carbamidomethyl (C)' or 'Oxidation (M)'
+            * **variable_modifications**: Variable modifications, specified using Unimod (www.unimod.org) terms, e.g. 'Carbamidomethyl (C)' or 'Oxidation (M)'
+            * **instrument**: Type of instrument (high_res or low_res). Use 'high_res' for high-resolution MS2 (Orbitrap, TOF), 'low_res' for ion trap.
+            * **fragment_mass_tolerance**: Fragment mass tolerance for MS2 matching.
+            * **fragment_bin_offset**: Offset for binning MS2 spectra. Typically 0.0 for high-res, 0.4 for low-res instruments.
+            """
+            if not self.params.get("generate-decoys", True):
+                comet_info += """* **PeptideIndexing:decoy_string**: String that was appended (or prefixed - see 'decoy_string_position' flag below) to the accessions
+                    in the protein database to indicate decoy proteins.
+            """
+            st.info(comet_info)
 
-                st.info("### 🔬 Identification using Comet")
+            comet_include = [":enzyme", "missed_cleavages", "fixed_modifications", "variable_modifications",
+                             "instrument", "fragment_mass_tolerance", "fragment_error_units", "fragment_bin_offset"]
+            if not self.params.get("generate-decoys", True):
+                # Only show decoy_string when not generating decoys
+                comet_include.append("PeptideIndexing:decoy_string")
 
-                comet_include = [
-                    "enzyme",
-                    "missed_cleavages",
-                    "variable_modifications",
-                    "precursor_mass_tolerance",
-                    "fragment_mass_tolerance",
-                    "fragment_bin_offset",
-                    "precursor_charge",
-                    "num_hits",
-                ]
-
-                self.ui.input_TOPP(
-                    "CometAdapter",
-                    custom_defaults={
-                        "threads": 8,
-                        "instrument": "high_res",
-                        "missed_cleavages": 2,
-                        "min_peptide_length": 6,
-                        "max_peptide_length": 40,
-                        "num_hits": 1,
-                        "num_enzyme_termini": "fully",
-                        "isotope_error": "0/1",
-                        "precursor_charge": "2:4",
-                        "precursor_mass_tolerance": 20.0,
-                        "fragment_mass_tolerance": 0.02,
-                        "fragment_bin_offset": 0.0,
-                        "max_variable_mods_in_peptide": 3,
-                        "minimum_peaks": 1,
-                        "clip_nterm_methionine": "true",
-                        "PeptideIndexing:IL_equivalent": "true",
-                        "PeptideIndexing:unmatched_action": "warn",
-                        "PeptideIndexing:decoy_string": "rev_",
-                    },
-                    include_parameters=comet_include,
-                    exclude_parameters=["second_enzyme"],
-                )
-
-            elif search_engine == "sage":
-
-                ident_info = """
-                **Identification (sage):**
-                * **enzyme**: The enzyme used for peptide digestion.
-                * **missed_cleavages**: Number of possible cleavage sites missed by the enzyme. It has no effect if enzyme is unspecific cleavage.
-                * **fixed_modifications**: Fixed modifications, specified using Unimod (www.unimod.org) terms, e.g. 'Carbamidomethyl (C)' or 'Oxidation (M)'
-                * **variable_modifications**: Variable modifications, specified using Unimod (www.unimod.org) terms, e.g. 'Carbamidomethyl (C)' or 'Oxidation (M)'
-                * **instrument**: Type of instrument (high_res or low_res). Use 'high_res' for high-resolution MS2 (Orbitrap, TOF), 'low_res' for ion trap.
-                * **fragment_mass_tolerance**: Fragment mass tolerance for MS2 matching.
-                * **fragment_bin_offset**: Offset for binning MS2 spectra. Typically 0.0 for high-res, 0.4 for low-res instruments.
-                """
-                if not self.params.get("generate-decoys", True):
-                    ident_info += """* **PeptideIndexing:decoy_string**: String that was appended (or prefixed - see 'decoy_string_position' flag below) to the accessions
-                        in the protein database to indicate decoy proteins.
-                """
-                st.info(ident_info)
-
-                st.info("### 🔬 Identification using Sage")
-
-                sage_include = [":enzyme", "missed_cleavages", "fixed_modifications", "variable_modifications",
-                                "instrument", "fragment_mass_tolerance", "fragment_error_units", "fragment_bin_offset", "PeptideIndexing:IL_equivalent"]
-                if not self.params.get("generate-decoys", True):
-                    # Only show decoy_string when not generating decoys
-                    sage_include.append("PeptideIndexing:decoy_string")
-
-                self.ui.input_TOPP(
-                    "SageAdapter",
-                    custom_defaults={
-                        "threads": 8,
-                        "instrument": "high_res",
-                        "decoy_prefix": "rev_",
-                        "min_len": 6,
-                        "max_len": 40,
-                        "min_matched_peaks": 1,
-                        "min_peaks": 1,
-                        "max_peaks": 500,
-                        "precursor_tol_left": -20.0,
-                        "precursor_tol_right": 20.0,
-                        "fragment_tol_left": -0.6,
-                        "fragment_tol_right": 0.6,
-                        "fragment_tol_unit": "Da",
-                        "charges": "2, 4",
-                        "min_peaks": 10,
-                        "max_variable_mods": 3,
-                        "isotope_error_range": "0,1",
-                        "PeptideIndexing:unmatched_action": "warn",
-                    },
-                    include_parameters=sage_include,
-                    exclude_parameters=["second_enzyme"],
-                )
+            self.ui.input_TOPP(
+                "IsobaricAnalyzer",
+                custom_defaults={
+                    "type": "tmt11plex",
+                    "threads": 8,
+                    "extraction:select_activation": "auto",
+                    "extraction:reporter_mass_shift": 0.002,
+                    "extraction:min_reporter_intensity": 0.0,
+                    "extraction:min_precursor_purity": 0.0,
+                    "extraction:precursor_isotope_deviation": 10.0,
+                    "tmt11plex:reference_channel": 126,
+                    "quantification:isotope_correction": "false",
+                }
+            )
 
         with t[1]:
             st.info("""
@@ -205,20 +135,18 @@ class WorkflowTest(WorkflowManager):
             * **score_type**: Type of the peptide main score
             * **subset_max_train**: Only train an SVM on a subset of <x> PSMs, and use the resulting score vector to evaluate the other PSMs. Recommended when analyzing huge numbers (>1 million) of PSMs. When set to 0, all PSMs are used for training as normal.
             """)
-            # decoy_pattern is always derived from upstream, never shown
-            percolator_include = ["post_processing_tdc", "score_type", "subset_max_train"]
-
             self.ui.input_TOPP(
-                "PercolatorAdapter",
+                "CometAdapter",
                 custom_defaults={
-                    "threads": 8,
-                    "subset_max_train": 300000,
-                    "decoy_pattern": "rev_",
-                    "score_type": "pep",
-                    "post_processing_tdc": "true",
+                    "instrument": "high_res",
+                    "enzyme": "Trypsin/P",
+                    "variable_modifications": "Acetyl (Protein N-term)",
+                    "max_variable_mods_in_peptide": 3,
+                    "precursor_mass_tolerance": 4.5,
+                    "fragment_mass_tolerance": 0.01,
                 },
-                include_parameters=percolator_include,
-                exclude_parameters=["out_type"],
+                include_parameters=comet_include,
+                exclude_parameters=["second_enzyme"],
             )
 
         with t[2]:
@@ -228,73 +156,22 @@ class WorkflowTest(WorkflowManager):
             * **score:psm**: The score which should be reached by a peptide hit to be kept. (use 'NAN' to disable this filter)
             """)
             self.ui.input_TOPP(
-                "IDFilter",
+                "PercolatorAdapter",
                 custom_defaults={
-                    "threads": 2,
-                    "score:type_peptide": "q-value",
+                    "max_threads": 8,
+                    "use_all_psms": "true",
+                }
+            )
+
+        with t[3]:
+            self.ui.input_TOPP(
+                "IDFilter",
+                tool_instance_name="IDFilter-strict",
+                custom_defaults={
+                    "score:type_peptitde": "q-value",
                     "score:psm": 0.10,
-                },
-                # include_parameters=["type_peptide", "score:psm"]
-                exclude_parameters=["type_protein"],
+                }
             )
-
-        with t[3]:  # Library Generation
-            st.info("""
-            **Spectral Library Generation (EasyPQP):**
-            Generate a spectral library from filtered PSMs for targeted proteomics (DIA/SWATH).
-            """)
-
-            self.ui.input_widget(
-                key="generate-library",
-                default=False,
-                name="Generate Spectral Library",
-                widget_type="checkbox",
-                help="Enable spectral library generation using EasyPQP.",
-                reactive=True,
-            )
-            self.params = self.parameter_manager.get_parameters_from_json()
-
-            if self.params.get("generate-library", False):
-                # FDR options
-                self.ui.input_widget(
-                    key="library-use-fdr",
-                    default=False,
-                    name="Apply additional FDR filtering",
-                    widget_type="checkbox",
-                    help="If disabled (recommended), uses --nofdr since IDFilter already applied FDR.",
-                    reactive=True,
-                )
-                self.params = self.parameter_manager.get_parameters_from_json()
-
-                if self.params.get("library-use-fdr", False):
-                    self.ui.input_widget(
-                        key="library-psm-fdr",
-                        default=0.01,
-                        name="PSM FDR Threshold",
-                        widget_type="number",
-                        min_value=0.001,
-                        max_value=1.0,
-                        step_size=0.01,
-                    )
-
-                # Decoy options
-                self.ui.input_widget(
-                    key="library-generate-decoys",
-                    default=True,
-                    name="Generate Decoy Library",
-                    widget_type="checkbox",
-                    reactive=True,
-                )
-                self.params = self.parameter_manager.get_parameters_from_json()
-
-                if self.params.get("library-generate-decoys", True):
-                    self.ui.input_widget(
-                        key="library-decoy-method",
-                        default="shuffle",
-                        name="Decoy Method",
-                        widget_type="selectbox",
-                        options=["shuffle", "reverse", "pseudo-reverse", "shift"],
-                    )
 
         with t[4]:
             st.info("""
@@ -304,20 +181,64 @@ class WorkflowTest(WorkflowManager):
             * **proteinFDR**: Protein FDR threshold (0.05=5%).
             """)
             self.ui.input_TOPP(
-                "ProteomicsLFQ",
+                "IDMapper",
                 custom_defaults={
-                    "threads": 12,
-                    "targeted_only": "true",
-                    "feature_with_id_min_score": 0.1,
-                    "Seeding:intThreshold": 1000.0,
-                    "psmFDR": 0.01,
-                    "proteinFDR": 0.01,
-                    "picked_proteinFDR": "true",
-                },
-                include_parameters=["intThreshold", "psmFDR", "proteinFDR"],
+                    "threads": 8,
+                }
+            )
+        with t[5]:
+            self.ui.input_TOPP(
+                "FileMerger",
+                custom_defaults={
+                    "in_type": "consensusXML",
+                    "annotate_file_origin": "true",
+                    "append_method": "append_cols",
+                    "threads": 8,
+                }
+            )
+        with t[6]:
+            self.ui.input_TOPP(
+                "ProteinInference",
+                custom_defaults={
+                    "threads": 8,
+                    "picked_decoy_string": "DECOY_",
+                    "protein_fdr": True,
+                    "Algorithm:score_type": "PEP",
+                }
             )
 
-        with t[5]:
+        with t[7]:
+            self.ui.input_TOPP(
+                "IDFilter",
+                tool_instance_name="IDFilter-lenient",
+                custom_defaults={
+                    "score:type_protein": "q-value",
+                    "score:protein": 0.01,
+                    "score:psm": 0.01,
+                    "delete_unreferenced_peptide_hits": "true",
+                    "remove_decoys": "true",
+                }
+            )
+
+        with t[8]:
+            self.ui.input_TOPP(
+                "IDConflictResolver",
+                custom_defaults={
+                    "threads": 4,
+                }
+            )
+
+        with t[9]:
+            self.ui.input_TOPP(
+                "ProteinQuantifier",
+                custom_defaults={
+                    "top:include_all": True,
+                    "ratios": True,
+                    "threads": 8,
+                }   
+            )
+
+        with t[10]:
             st.markdown("### 🧪 Sample Group Assignment")
             st.info(
                 "Enter a group name for each mzML file.\n\n"
@@ -364,13 +285,19 @@ class WorkflowTest(WorkflowManager):
                 self.parameter_manager.save_parameters()
 
     def execution(self) -> bool:
-        search_engine = self.params.get("search-engine", "comet")
-        self.logger.log(f"🔍 Selected search engine: {search_engine}")
-
         """
-        Refactored TOPP workflow execution:
-        - Per-sample: sageAdapter -> PercolatorAdapter -> IDFilter
-        - Cross-sample: ProteomicsLFQ (single combined output)
+        Isobaric proteomics workflow (list-based execution):
+        IsobaricAnalyzer
+        → CometAdapter
+        → PercolatorAdapter
+        → IDFilter (PSM)
+        → IDMapper
+        → FileMerger
+        → ProteinInference
+        → IDFilter (Protein)
+        → IDConflictResolver
+        → MSStatsConverter
+        → ProteinQuantifier
         """
         # ================================
         # 0️⃣ Input validation
@@ -412,8 +339,8 @@ class WorkflowTest(WorkflowManager):
             st.success(f"Using decoy FASTA: {decoy_fasta.name}")
             database_fasta = decoy_fasta
         else:
-            # Get decoy_string from sageAdapter params
-            decoy_string = self.params.get("sageAdapter", {}).get("PeptideIndexing:decoy_string", "rev_")
+            # Get decoy_string from CometAdapter params
+            decoy_string = self.params.get("CometAdapter", {}).get("PeptideIndexing:decoy_string", "rev_")
             self.logger.log("📄 Using existing FASTA database")
             st.info(f"Using original FASTA: {fasta_path.name}")
             database_fasta = fasta_path
@@ -421,33 +348,49 @@ class WorkflowTest(WorkflowManager):
         # ================================
         # 1️⃣ Directory setup
         # ================================
-        engine_suffix = "comet" if search_engine == "comet" else "sage"
-
         results_dir = Path(self.workflow_dir, "results")
-        search_dir = results_dir / f"{engine_suffix}_results"
-        perc_dir = results_dir / "percolator_results"
-        filter_dir = results_dir / "filter_results"
-        quant_dir = results_dir / "quant_results"
+        iso_dir = results_dir / "isobaric_consensusXML"
+        comet_dir = results_dir / "comet"
+        perc_dir = results_dir / "percolator"
+        psm_filter_dir = results_dir / "psm_filter"
+        map_dir = results_dir / "idmapper"
+        merge_dir = results_dir / "merged"
+        protein_dir = results_dir / "protein"
+        msstats_dir = results_dir / "msstats"
+        quant_dir = results_dir / "quant"
 
-        results_dir = Path(self.workflow_dir, "input-files")
-
-        for d in [search_dir, perc_dir, filter_dir, quant_dir]:
+        for d in [
+            iso_dir, comet_dir, perc_dir, psm_filter_dir,
+            map_dir, merge_dir, protein_dir, msstats_dir, quant_dir
+        ]:
             d.mkdir(parents=True, exist_ok=True)
+
 
         self.logger.log("📁 Output directories created")
 
         # ================================
         # 2️⃣ File path definitions (per sample)
         # ================================
-        search_results = []
+        iso_consensus = []
+        comet_results = []
         percolator_results = []
-        filter_results = []
+        psm_filtered = []
+        mapped_ids = []
 
         for mz in in_mzML:
             stem = Path(mz).stem
-            search_results.append(str(search_dir / f"{stem}_{engine_suffix}.idXML"))
-            percolator_results.append(str(perc_dir / f"{stem}_per.idXML"))
-            filter_results.append(str(filter_dir / f"{stem}_filter.idXML"))
+            iso_consensus.append(str(iso_dir / f"{stem}_iso.consensusXML"))
+            comet_results.append(str(comet_dir / f"{stem}_comet.idXML"))
+            percolator_results.append(str(perc_dir / f"{stem}_comet_perc.idXML"))
+            psm_filtered.append(str(psm_filter_dir / f"{stem}_comet_perc_filter.idXML"))
+            mapped_ids.append(str(map_dir / f"{stem}_comet_perc_filter_map.consensusXML"))
+
+        merged_id = str(merge_dir / "ID_mapper_merge.consensusXML")
+        protein_id = str(protein_dir / "ID_mapper_merge_epi.consensusXML")
+        protein_filter = str(protein_dir / "ID_mapper_merge_epi_filter.consensusXML")
+        protein_resolved = str(protein_dir / "ID_mapper_merge_epi_filter_resconf.consensusXML")
+        msstats_input = str(msstats_dir / "msstats_input.csv")
+        consensus_out = str(quant_dir / "openms_design_protein_openms.csv")
 
         # ================================
         # 3️⃣ Per-file processing
@@ -457,38 +400,46 @@ class WorkflowTest(WorkflowManager):
             st.info(f"Processing sample: {stem}")
 
         self.logger.log("🔬 Starting per-sample processing...")
-        search_tool = "CometAdapter" if search_engine == "comet" else "SageAdapter"
 
-        # --- Identification (Comet / Sage) ---
-        self.logger.log(f"🔎 Running peptide search with {search_tool}...")
-        with st.spinner(f"{search_tool} ({stem})"):
-            sage_extra_params = {"database": str(database_fasta)}
-            if self.params.get("generate-decoys", True):
-                # Propagate decoy_string from DecoyDatabase
-                sage_extra_params["PeptideIndexing:decoy_string"] = decoy_string
-
+        # --- IsobaricAnalyzer ---
+        self.logger.log("🏷️ Running isobaric labeling analysis...")
+        with st.spinner("IsobaricAnalyzer"):
             if not self.executor.run_topp(
-                search_tool,
+                "IsobaricAnalyzer",
                 {
                     "in": in_mzML,
-                    "out": search_results,
+                    "out": iso_consensus,
                 },
-                sage_extra_params,
+            ):
+                self.logger.log("Workflow stopped due to error")
+                return False
+        self.logger.log("✅ IsobaricAnalyzer complete")
+
+        # --- CometAdapter ---
+        self.logger.log("🔎 Running peptide search...")
+        with st.spinner(f"CometAdapter"):
+            comet_extra_params = {"database": str(database_fasta)}
+            if self.params.get("generate-decoys", True):
+                # Propagate decoy_string from DecoyDatabase
+                comet_extra_params["PeptideIndexing:decoy_string"] = decoy_string
+
+            if not self.executor.run_topp(
+                "CometAdapter",
+                {
+                    "in": in_mzML,
+                    "out": comet_results,
+                },
+                comet_extra_params,
             ):
                 self.logger.log("Workflow stopped due to error")
                 return False
 
-        # Get fragment tolerance from SageAdapter parameters for visualization
-        topp_params = self.parameter_manager.get_topp_parameters(search_tool)
+        # Get fragment tolerance from CometAdapter parameters for visualization
+        comet_params = self.parameter_manager.get_topp_parameters("CometAdapter")
+        frag_tol = comet_params.get("fragment_mass_tolerance", 0.02)
+        frag_tol_is_ppm = comet_params.get("fragment_error_units", "Da") != "Da"
 
-        if search_engine == "comet":
-            frag_tol = topp_params.get("fragment_mass_tolerance", 0.02)
-            frag_tol_is_ppm = topp_params.get("fragment_error_units", "Da") != "Da"
-        else:
-            frag_tol = topp_params.get("fragment_mass_tolerance", 0.02)
-            frag_tol_is_ppm = False
-
-        # Build visualization cache for Sage results
+        # Build visualization cache for Comet results
         results_dir_path = Path(self.workflow_dir, "results")
         cache_dir = results_dir_path / "insight_cache"
         cache_dir.mkdir(parents=True, exist_ok=True)
@@ -500,7 +451,7 @@ class WorkflowTest(WorkflowManager):
         spectra_df = None
         filename_to_index = {}
 
-        for idxml_file in search_results:
+        for idxml_file in comet_results:
             idxml_path = Path(idxml_file)
             cache_id_prefix = idxml_path.stem
 
@@ -582,11 +533,11 @@ class WorkflowTest(WorkflowManager):
 
         # --- PercolatorAdapter ---
         self.logger.log("📊 Running rescoring...")
-        with st.spinner(f"PercolatorAdapter ({stem})"):
+        with st.spinner(f"PercolatorAdapter"):
             if not self.executor.run_topp(
                 "PercolatorAdapter",
                 {
-                    "in": search_results,
+                    "in": comet_results,
                     "out": percolator_results,
                 },
                 {"decoy_pattern": decoy_string},  # Always propagated from upstream
@@ -670,25 +621,21 @@ class WorkflowTest(WorkflowManager):
 
         self.logger.log("✅ Rescoring complete")
 
-        # if not Path(percolator_results[i]).exists():
-        #     st.error(f"PercolatorAdapter failed for {stem}")
-        #     st.stop()
-
         # --- IDFilter ---
         self.logger.log("🔧 Filtering identifications...")
-        with st.spinner(f"IDFilter ({stem})"):
+        with st.spinner(f"IDFilter"):
             if not self.executor.run_topp(
                 "IDFilter",
                 {
                     "in": percolator_results,
-                    "out": filter_results,
+                    "out": psm_filtered,
                 },
             ):
                 self.logger.log("Workflow stopped due to error")
                 return False
 
         # Build visualization cache for Filter results
-        for idxml_file in filter_results:
+        for idxml_file in psm_filtered:
             idxml_path = Path(idxml_file)
             cache_id_prefix = idxml_path.stem
 
@@ -763,151 +710,123 @@ class WorkflowTest(WorkflowManager):
 
         self.logger.log("✅ Filtering complete")
 
-        # if not Path(filter_results[i]).exists():
-        #     st.error(f"IDFilter failed for {stem}")
-        #     st.stop()
-
         # ================================
-        # EasyPQP Spectral Library Generation (optional)
+        # ✨ NEW: 4️⃣ IDMapper (per-file: iso_consensus + psm_filtered → mapped_ids)
         # ================================
-        if self.params.get("generate-library", False):
-            self.logger.log("📚 Building spectral library with EasyPQP...")
-            st.info("Building spectral library with EasyPQP...")
-            library_dir = Path(self.workflow_dir, "results", "library")
-            library_dir.mkdir(parents=True, exist_ok=True)
-
-            psms_files, peaks_files = [], []
-
-            for filter_idxml in filter_results:
-                original_stem = Path(filter_idxml).stem.replace("_filter", "")
-                matching_mzml = next((m for m in in_mzML if Path(m).stem == original_stem), None)
-                if not matching_mzml:
-                    self.logger.log(f"Warning: No matching mzML found for {filter_idxml}")
-                    continue
-
-                # easypqp library requires specific extensions for file recognition:
-                # - PSM files must contain 'psmpkl' → use .psmpkl extension
-                # - Peak files must contain 'peakpkl' → use .peakpkl extension
-                # After splitext(), stem will be just "{mzML_stem}" matching PSM base_name
-                psms_out = str(library_dir / f"{original_stem}.psmpkl")
-                peaks_out = str(library_dir / f"{original_stem}.peakpkl")
-
-                convert_cmd = [
-                    "easypqp", "convert",
-                    "--pepxml", filter_idxml,
-                    "--spectra", matching_mzml,
-                    "--psms", psms_out,
-                    "--peaks", peaks_out
-                ]
-                if self.executor.run_command(convert_cmd):
-                    psms_files.append(psms_out)
-                    peaks_files.append(peaks_out)
-
-            if psms_files:
-                # easypqp library outputs TSV format (despite common .pqp extension)
-                library_tsv = str(library_dir / "spectral_library.tsv")
-                library_cmd = ["easypqp", "library", "--out", library_tsv]
-
-                if not self.params.get("library-use-fdr", False):
-                    # --nofdr only skips FDR recalculation, NOT threshold filtering
-                    # Set all thresholds to 1.0 to bypass filtering for pre-filtered input
-                    library_cmd.extend([
-                        "--nofdr",
-                        "--psm_fdr_threshold", "1.0",
-                        "--peptide_fdr_threshold", "1.0",
-                        "--protein_fdr_threshold", "1.0"
-                    ])
-                else:
-                    # Apply user-specified FDR filtering
-                    library_cmd.extend([
-                        "--psm_fdr_threshold",
-                        str(self.params.get("library-psm-fdr", 0.01)),
-                        "--peptide_fdr_threshold",
-                        str(self.params.get("library-peptide-fdr", 0.01)),
-                        "--protein_fdr_threshold",
-                        str(self.params.get("library-protein-fdr", 0.01))
-                    ])
-
-                for psms, peaks in zip(psms_files, peaks_files):
-                    library_cmd.extend([psms, peaks])
-
-                if self.executor.run_command(library_cmd):
-                    self.logger.log("✅ Spectral library created")
-                    st.success("Spectral library created")
-                else:
-                    self.logger.log("Warning: Failed to build spectral library")
-            else:
-                self.logger.log("Warning: No PSMs converted for library generation")
-
-        st.success(f"✓ {stem} identification completed")
-
-        # # ================================
-        # # 4️⃣ ProteomicsLFQ (cross-sample)
-        # # ================================
-        self.logger.log("📈 Running cross-sample quantification...")
-        st.info("Running ProteomicsLFQ (cross-sample quantification)")
-
-        quant_mztab = str(quant_dir / "openms_quant.mzTab")
-        quant_cxml = str(quant_dir / "openms.consensusXML")
-        quant_msstats = str(quant_dir / "openms_msstats.csv")
-
-        with st.spinner("ProteomicsLFQ"):
-                combined_in = " ".join(in_mzML)
-                combined_ids = " ".join(filter_results)
-                self.logger.log(f"COMBINED_IN {combined_in}", 1)
-                self.logger.log(f"COMBINED_IN_TYPE {type(combined_in).__name__}", 1)
-                self.logger.log(f"FILTER_RESULTS = {filter_results}", 1)
-                self.logger.log(f"FILTER_RESULTS_LEN = {len(filter_results)}", 1)
-
-                # ✅ Streamlit output (debug view)
-                st.markdown("### 🔍 ProteomicsLFQ Input Debug")
-                st.write("**combined_in:**", combined_in)
-                st.write("**combined_in type:**", type(combined_in).__name__)
-
-                st.write("**combined_ids:**", combined_ids)
-                st.write("**combined_ids type:**", type(combined_ids).__name__)
-
+        self.logger.log("🗺️ Mapping IDs to isobaric consensus features...")
+        for iso, psm, mapped in zip(iso_consensus, psm_filtered, mapped_ids):
+            iso_stem = Path(iso).stem
+            with st.spinner(f"IDMapper ({iso_stem})"):
                 if not self.executor.run_topp(
-                        "ProteomicsLFQ",
-                        {
-                            "in": [in_mzML],
-                            "ids": [filter_results],
-                            "out": [quant_mztab],
-                            "out_cxml": [quant_cxml],
-                            "out_msstats": [quant_msstats],
-                        },
-                        {
-                            "fasta": str(database_fasta),
-                            "psmFDR": 0.5,
-                            "proteinFDR": 0.5,
-                            "threads": 12,
-                            # Disable FAIMS/IM handling to avoid segfault in OpenMS 3.5.0
-                            "PeptideQuantification:extract:IM_window": "0.0",
-                            "PeptideQuantification:faims:merge_features": "false",
-                        }
-                    ):
+                    "IDMapper",
+                    {
+                        "in": [iso],
+                        "id": [psm],
+                        "out": [mapped],
+                    },
+                ):
                     self.logger.log("Workflow stopped due to error")
                     return False
-        self.logger.log("✅ Quantification complete")
-
-        # if not Path(quant_mztab).exists():
-        #     st.error("ProteomicsLFQ failed: mzTab not created")
-        #     st.stop()
-
+        self.logger.log("✅ IDMapper complete")
 
         # ================================
-        # 5️⃣ Final report
-        # # ================================
-        st.success("🎉 TOPP workflow completed successfully")
-        st.write("📁 Results directory:")   
-        st.code(str(results_dir)) 
+        # ✨ NEW: 5️⃣ FileMerger (mapped_ids → merged_id)
+        # ================================
+        self.logger.log("🔗 Merging mapped consensus files...")
+        with st.spinner("FileMerger"):
+            if not self.executor.run_topp(
+                "FileMerger",
+                {
+                    "in": mapped_ids,
+                    "out": [merged_id],
+                },
+            ):
+                self.logger.log("Workflow stopped due to error")
+                return False
+        self.logger.log("✅ FileMerger complete")
 
+        # ================================
+        # ✨ NEW: 6️⃣ ProteinInference / Epifany (merged_id → protein_id)
+        # ================================
+        self.logger.log("🧩 Running protein inference...")
+        with st.spinner("Epifany (ProteinInference)"):
+            if not self.executor.run_topp(
+                "Epifany",
+                {
+                    "in": [merged_id],
+                    "out": [protein_id],
+                },
+            ):
+                self.logger.log("Workflow stopped due to error")
+                return False
+        self.logger.log("✅ ProteinInference complete")
 
-        st.write("📄 Generated files:")
-        st.write(f"- mzTab: {quant_mztab}")
-        st.write(f"- consensusXML: {quant_cxml}")
-        st.write(f"- MSstats CSV: {quant_msstats}")
+        # ================================
+        # ✨ NEW: 7️⃣ IDFilter (Protein level) (protein_id → protein_filter)
+        # ================================
+        self.logger.log("🔬 Filtering proteins...")
+        with st.spinner("IDFilter (Protein)"):
+            if not self.executor.run_topp(
+                "IDFilter",
+                {
+                    "in": [protein_id],
+                    "out": [protein_filter],
+                },
+            ):
+                self.logger.log("Workflow stopped due to error")
+                return False
+        self.logger.log("✅ IDFilter (Protein) complete")
 
+        # ================================
+        # ✨ NEW: 8️⃣ IDConflictResolver (protein_filter → protein_resolved)
+        # ================================
+        self.logger.log("⚖️ Resolving ID conflicts...")
+        with st.spinner("IDConflictResolver"):
+            if not self.executor.run_topp(
+                "IDConflictResolver",
+                {
+                    "in": [protein_filter],
+                    "out": [protein_resolved],
+                },
+            ):
+                self.logger.log("Workflow stopped due to error")
+                return False
+        self.logger.log("✅ IDConflictResolver complete")
+
+        # ================================
+        # ✨ NEW: 9️⃣ MSStatsConverter (protein_resolved → msstats_input)
+        # ================================
+        # self.logger.log("📋 Converting to MSstats format...")
+        # with st.spinner("MSStatsConverter"):
+        #     if not self.executor.run_topp(
+        #         "MSstatsConverter",
+        #         {
+        #             "in": [protein_resolved],
+        #             "out": [msstats_input],
+        #         },
+        #     ):
+        #         self.logger.log("Workflow stopped due to error")
+        #         return False
+        # self.logger.log("✅ MSStatsConverter complete")
+
+        # ================================
+        # ✨ NEW: 🔟 ProteinQuantifier (protein_resolved → consensus_out)
+        # ================================
+        self.logger.log("📐 Running protein quantification...")
+        with st.spinner("ProteinQuantifier"):
+            if not self.executor.run_topp(
+                "ProteinQuantifier",
+                {
+                    "in": [protein_resolved],
+                    "out": [consensus_out],
+                },
+            ):
+                self.logger.log("Workflow stopped due to error")
+                return False
+        self.logger.log("✅ ProteinQuantifier complete")
+
+        self.logger.log("🎉 Isobaric proteomics workflow completed successfully!")
+        st.success("✅ Isobaric proteomics workflow completed!")
         return True
 
     @st.fragment

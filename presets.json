@@ -12,7 +12,7 @@
             "_description": "Optimized for low-resolution MS2 (Ion trap) when using ppm fragment tolerance",
             "CometAdapter": {
                 "instrument": "low_res",
-                "fragment_mass_tolerance": 0.50025,
+                "fragment_mass_tolerance": 0.6,
                 "fragment_bin_offset": 0.4
             }
         }

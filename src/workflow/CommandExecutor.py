@@ -278,6 +278,11 @@ class CommandExecutor:
             if ini_path.exists():
                 command += ["-ini", str(ini_path)]
 
+            for idx, cmd in enumerate(commands):
+                # 리스트 형태의 커맨드를 문자열로 합쳐서 보기 좋게 출력
+                print(f"  🔹 Command {idx + 1}: {' '.join(cmd)}")
+            print("==========================================================\n")
+
         # Run command(s)
         if len(commands) == 1:
             return self.run_command(commands[0])
