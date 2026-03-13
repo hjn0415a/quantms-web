@@ -108,7 +108,7 @@ class WorkflowTest(WorkflowManager):
             st.info(comet_info)
 
             comet_include = [":enzyme", "missed_cleavages", "fixed_modifications", "variable_modifications",
-                             "instrument", "fragment_mass_tolerance", "fragment_error_units", "fragment_bin_offset"]
+                             "instrument", "fragment_mass_tolerance", "fragment_error_units", "fragment_bin_offset", "PeptideIndexing:IL_equivalent"]
             if not self.params.get("generate-decoys", True):
                 # Only show decoy_string when not generating decoys
                 comet_include.append("PeptideIndexing:decoy_string")
@@ -123,7 +123,6 @@ class WorkflowTest(WorkflowManager):
                     "extraction:min_reporter_intensity": 0.0,
                     "extraction:min_precursor_purity": 0.0,
                     "extraction:precursor_isotope_deviation": 10.0,
-                    "tmt11plex:reference_channel": 126,
                     "quantification:isotope_correction": "false",
                 }
             )
@@ -139,11 +138,16 @@ class WorkflowTest(WorkflowManager):
                 "CometAdapter",
                 custom_defaults={
                     "instrument": "high_res",
+                    "missed_cleavages": 2,
+                    "min_peptide_length": 6,
+                    "max_peptide_length": 40,
+                    "num_hits": 1,
                     "enzyme": "Trypsin/P",
-                    "variable_modifications": "Acetyl (Protein N-term)",
+                    "isotope_error": "0/1",
+                    "precursor_charge": "2:4",
                     "max_variable_mods_in_peptide": 3,
                     "precursor_mass_tolerance": 4.5,
-                    "fragment_mass_tolerance": 0.01,
+                    "fragment_mass_tolerance": 0.015,
                 },
                 include_parameters=comet_include,
                 exclude_parameters=["second_enzyme"],
@@ -160,7 +164,11 @@ class WorkflowTest(WorkflowManager):
                 custom_defaults={
                     "max_threads": 8,
                     "use_all_psms": "true",
-                }
+                    "subset_max_train": 300000,
+                    "decoy_pattern": "DECOY_",
+                    "score_type": "pep"
+                },
+                include_parameters=["post_processing_tdc"],
             )
 
         with t[3]:
@@ -191,10 +199,10 @@ class WorkflowTest(WorkflowManager):
                 "FileMerger",
                 custom_defaults={
                     "in_type": "consensusXML",
-                    "annotate_file_origin": "true",
                     "append_method": "append_cols",
                     "threads": 8,
-                }
+                },
+                include_parameters=["annotate_file_origin"]
             )
         with t[6]:
             self.ui.input_TOPP(
@@ -232,10 +240,8 @@ class WorkflowTest(WorkflowManager):
             self.ui.input_TOPP(
                 "ProteinQuantifier",
                 custom_defaults={
-                    "top:include_all": True,
-                    "ratios": True,
                     "threads": 8,
-                }   
+                },
             )
 
         with t[10]:
