@@ -633,9 +633,8 @@ class StreamlitUI:
             display_subsection_tabs (bool, optional): Whether to display main subsections in separate tabs (if more than one main section). Defaults to False.
             custom_defaults (dict, optional): Dictionary of custom defaults to use. Defaults to an empty dict.
         """
-        # 1. tool_instance_name이 없으면 기본 툴 이름 사용
         if tool_instance_name is None:
-            tool_instance_name = topp_tool_name
+            tool_instance_name = ""
 
         if not display_subsections:
             display_subsection_tabs = False
@@ -812,7 +811,11 @@ class StreamlitUI:
             for p in params:
                 # get key and name
                 base_key_str = p['key'].decode()
-                unique_key = f"{self.parameter_manager.topp_param_prefix}{tool_instance_name}:{base_key_str}"
+                if tool_instance_name == "":
+                    unique_key = f"{self.parameter_manager.topp_param_prefix}{base_key_str}"
+                else:
+                    unique_key = f"{self.parameter_manager.topp_param_prefix}{tool_instance_name}:{base_key_str}"
+                print(f"unique_key: {unique_key}")
                 name = p["name"]
                 try:
                     # sometimes strings with newline, handle as list
