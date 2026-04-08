@@ -9,6 +9,7 @@ from .ParameterManager import ParameterManager
 import sys
 import importlib.util
 import json
+import streamlit as st
 
 class CommandExecutor:
     """
@@ -24,6 +25,28 @@ class CommandExecutor:
         self.pid_dir = Path(workflow_dir, "pids")
         self.logger = logger
         self.parameter_manager = parameter_manager
+
+    def _get_max_threads(self) -> int:
+        """
+        Get max threads for current deployment mode.
+
+        In local mode, reads from parameter manager (persisted params.json).
+        In online mode, uses the configured value directly from settings.
+
+        Returns:
+            int: Maximum number of threads to use for parallel processing (minimum 1).
+        """
+        settings = st.session_state.get("settings", {})
+        max_threads_config = settings.get("max_threads", {"local": 4, "online": 2})
+
+        if settings.get("online_deployment", False):
+            value = max_threads_config.get("online", 2)
+        else:
+            default = max_threads_config.get("local", 4)
+            params = self.parameter_manager.get_parameters_from_json()
+            value = params.get("max_threads", default)
+
+        return max(1, int(value))
 
     def run_multiple_commands(
         self, commands: list[str]
@@ -43,10 +66,8 @@ class CommandExecutor:
         Returns:
             bool: True if all commands succeeded, False if any failed.
         """
-        from src.common.common import get_max_threads
-
         # Get thread settings and calculate distribution
-        max_threads = get_max_threads()
+        max_threads = self._get_max_threads()
         num_commands = len(commands)
         parallel_commands = min(num_commands, max_threads)
 
@@ -115,35 +136,45 @@ class CommandExecutor:
         # User can close the Streamlit app and return to a running workflow later
         pid_file_path = self.pid_dir / str(child_pid)
         pid_file_path.touch()
-        
+
+        # Buffer for stderr - will only be written to minimal log if process fails
+        stderr_buffer: list[str] = []
+
         # Real-time output capture
-        self._stream_output(process)
-        
+        self._stream_output(process, stderr_buffer)
+
         # Wait for process completion
         process.wait()
-        
+
         # Cleanup PID file
         pid_file_path.unlink()
 
         end_time = time.time()
         execution_time = end_time - start_time
-        
+
         # Log completion
         self.logger.log(f"Process finished:\n"+' '.join(command)+f"\nTotal time to run command: {execution_time:.2f} seconds", 1)
-        
+
         # Check for errors
         if process.returncode != 0:
+            # Write buffered stderr to minimal log only on failure
+            for line in stderr_buffer:
+                self.logger.log(f"STDERR: {line}", 0)
             self.logger.log(f"ERROR: Command failed with exit code {process.returncode}: {command[0]}", 0)
             return False
         return True
 
-    def _stream_output(self, process: subprocess.Popen) -> None:
+    def _stream_output(self, process: subprocess.Popen, stderr_buffer: list[str]) -> None:
         """
         Streams stdout and stderr from a running process in real-time to the logger.
         This method runs in the workflow process, not the GUI thread, so it's safe to block.
-        
+
+        Stderr is buffered and only logged to the detailed log (level 2) during execution.
+        The caller is responsible for writing buffered stderr to minimal log if the process fails.
+
         Args:
             process: The subprocess.Popen object to stream from
+            stderr_buffer: A list to accumulate stderr lines for conditional logging
         """
         def read_stdout():
             """Read stdout in real-time"""
@@ -157,27 +188,30 @@ class CommandExecutor:
                 self.logger.log(f"Error reading stdout: {e}", 2)
             finally:
                 process.stdout.close()
-        
+
         def read_stderr():
-            """Read stderr in real-time"""
+            """Read stderr in real-time, buffering for conditional minimal log output"""
             try:
                 for line in iter(process.stderr.readline, ''):
                     if line:
-                        self.logger.log(f"STDERR: {line.rstrip()}", 0)
+                        stderr_line = line.rstrip()
+                        stderr_buffer.append(stderr_line)
+                        # Log to detailed log only during execution
+                        self.logger.log(f"STDERR: {stderr_line}", 2)
                     if process.poll() is not None:
                         break
             except Exception as e:
                 self.logger.log(f"Error reading stderr: {e}", 2)
             finally:
                 process.stderr.close()
-        
+
         # Start threads to read stdout and stderr simultaneously
         stdout_thread = threading.Thread(target=read_stdout, daemon=True)
         stderr_thread = threading.Thread(target=read_stderr, daemon=True)
-        
+
         stdout_thread.start()
         stderr_thread.start()
-        
+
         # Wait for both threads to complete
         stdout_thread.join()
         stderr_thread.join()
@@ -221,8 +255,7 @@ class CommandExecutor:
             n_processes = max(io_lengths)
 
         # Calculate threads per command based on max_threads setting
-        from src.common.common import get_max_threads
-        max_threads = get_max_threads()
+        max_threads = self._get_max_threads()
         parallel_commands = min(n_processes, max_threads)
         threads_per_command = max(1, max_threads // parallel_commands)
 

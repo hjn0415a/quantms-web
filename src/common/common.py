@@ -32,29 +32,6 @@ from src.common.admin import (
 OS_PLATFORM = sys.platform
 
 
-def get_max_threads() -> int:
-    """
-    Get max threads for current deployment mode.
-
-    In local mode, checks for UI override in session state.
-    In online mode, uses the configured value directly.
-
-    Returns:
-        int: Maximum number of threads to use for parallel processing.
-    """
-    settings = st.session_state.get("settings", {})
-    max_threads_config = settings.get("max_threads", {"local": 4, "online": 2})
-
-    if settings.get("online_deployment", False):
-        return max_threads_config.get("online", 2)
-    else:
-        # Local mode: check for UI override, fallback to config default
-        return st.session_state.get(
-            "max_threads_override",
-            max_threads_config.get("local", 4)
-        )
-
-
 def is_safe_workspace_name(name: str) -> bool:
     """
     Check if a workspace name is safe (no path traversal characters).
@@ -422,6 +399,23 @@ def page_setup(page: str = "") -> dict[str, Any]:
                     }, function(error) {
                         console.error("Failed to set PiwikPro analytics consent:", error);
                     });
+                    </script></body>
+                </html>
+                """,
+                width=1,
+                height=1,
+            )
+        if (st.session_state.settings["analytics"]["matomo"]["enabled"]) and (
+            st.session_state.tracking_consent["matomo"] == True
+        ):
+            html(
+                """
+                <!DOCTYPE html>
+                <html lang="en">
+                    <head></head>
+                    <body><script>
+                    window.parent._mtm = window.parent._mtm || [];
+                    window.parent._mtm.push(['MTMSetConsentGiven']);
                     </script></body>
                 </html>
                 """,

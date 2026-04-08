@@ -27,7 +27,7 @@ if __name__ == '__main__':
             st.Page(Path("content", "results_pca.py"), title="PCA", icon="📊"),
             st.Page(Path("content", "results_heatmap.py"), title="Heatmap", icon="🔥"),
             st.Page(Path("content", "results_library.py"), title="Spectral Library", icon="📚"),
-            st.Page(Path("content", "results_proteomicslfq.py"), title="GO Terms", icon="🧪"),
+            st.Page(Path("content", "results_proteomicslfq.py"), title="Proteomics LFQ", icon="🧪"),
         ],
     }
 

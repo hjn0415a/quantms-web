@@ -5,5 +5,4 @@ from src.WorkflowTest import WorkflowTest
 params = page_setup()
 
 wf = WorkflowTest()
-
 wf.show_execution_section()

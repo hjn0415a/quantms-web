@@ -8,7 +8,7 @@ from pathlib import Path
 from scipy.stats import ttest_ind
 from pyopenms import IdXMLFile, MSExperiment, MzMLFile
 from src.workflow.ParameterManager import ParameterManager
-
+from statsmodels.stats.multitest import multipletests
 
 def get_workflow_dir(workspace):
     """Get the workflow directory path."""
@@ -261,6 +261,14 @@ def load_abundance_data(workspace_path: str, csv_mtime: float) -> tuple | None:
 
     stats_df = pd.DataFrame(stats_rows)
 
+    if not stats_df.empty:
+        mask = stats_df["p-value"].notna()
+        if mask.any():
+            _, p_adj, _, _ = multipletests(stats_df.loc[mask, "p-value"], method="fdr_bh")
+            stats_df.loc[mask, "p-adj"] = p_adj
+        else:
+            stats_df["p-adj"] = np.nan
+
     # Order samples by group (group2 first, then group1)
     sample_group_df = df[["Sample", "Group"]].drop_duplicates()
     group2_samples = sample_group_df[sample_group_df["Group"] == group2]["Sample"].tolist()
@@ -285,7 +293,7 @@ def load_abundance_data(workspace_path: str, csv_mtime: float) -> tuple | None:
 
     pivot_df = pd.DataFrame(pivot_list)
     pivot_df = pivot_df.merge(stats_df, on="ProteinName", how="left")
-    pivot_df = pivot_df[["ProteinName", "log2FC", "p-value"] + all_samples + ["PeptideSequence"]]
+    pivot_df = pivot_df[["ProteinName", "log2FC", "p-value", "p-adj"] + all_samples + ["PeptideSequence"]]
 
     # Build expression matrix (log2-transformed)
     expr_df = pivot_df.set_index("ProteinName")[all_samples]
