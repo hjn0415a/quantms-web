@@ -6,12 +6,17 @@ from streamlit_plotly_events import plotly_events
 from pyopenms import IdXMLFile
 from scipy.stats import ttest_ind
 import numpy as np
+import mygene
 
+from collections import defaultdict        
+from scipy.stats import fisher_exact         
 from src.workflow.WorkflowManager import WorkflowManager
+from src.common.common import page_setup
+from src.common.results_helpers import get_abundance_data
 from src.common.results_helpers import parse_idxml, build_spectra_cache
 from openms_insight import Table, Heatmap, LinePlot, SequenceView
 
-
+# params = page_setup()
 class WorkflowTest(WorkflowManager):
 
     def __init__(self) -> None:
@@ -354,16 +359,14 @@ class WorkflowTest(WorkflowManager):
         filter_dir = results_dir / "filter_results"
         quant_dir = results_dir / "quant_results"
 
-        results_dir = Path(self.workflow_dir, "input-files")
-
         for d in [comet_dir, perc_dir, filter_dir, quant_dir]:
             d.mkdir(parents=True, exist_ok=True)
 
         self.logger.log("📁 Output directories created")
 
-        # ================================
-        # 2️⃣ File path definitions (per sample)
-        # ================================
+        # # ================================
+        # # 2️⃣ File path definitions (per sample)
+        # # ================================
         comet_results = []
         percolator_results = []
         filter_results = []
@@ -498,10 +501,6 @@ class WorkflowTest(WorkflowManager):
             )
 
         self.logger.log("✅ Peptide search complete")
-
-        # if not Path(comet_results).exists():
-        #     st.error(f"CometAdapter failed for {stem}")
-        #     st.stop()
 
         # --- PercolatorAdapter ---
         self.logger.log("📊 Running rescoring...")
@@ -764,9 +763,9 @@ class WorkflowTest(WorkflowManager):
 
         st.success(f"✓ {stem} identification completed")
 
-        # # ================================
-        # # 4️⃣ ProteomicsLFQ (cross-sample)
-        # # ================================
+        # ================================
+        # 4️⃣ ProteomicsLFQ (cross-sample)
+        # ================================
         self.logger.log("📈 Running cross-sample quantification...")
         st.info("Running ProteomicsLFQ (cross-sample quantification)")
 
@@ -813,10 +812,17 @@ class WorkflowTest(WorkflowManager):
                     return False
         self.logger.log("✅ Quantification complete")
 
-        # if not Path(quant_mztab).exists():
-        #     st.error("ProteomicsLFQ failed: mzTab not created")
-        #     st.stop()
-
+        # ======================================================
+        # ⚠️ 5️⃣ GO Enrichment Analysis (INLINE IN EXECUTION)
+        # ======================================================
+        workspace_path = Path(self.workflow_dir).parent
+        res = get_abundance_data(workspace_path)
+        if res is not None:
+            pivot_df, _, _ = res
+            self.logger.log("✅ pivot_df loaded, starting GO enrichment...")
+            self._run_go_enrichment(pivot_df, results_dir)
+        else:
+            st.warning("GO enrichment skipped: abundance data not available.")
 
         # ================================
         # 5️⃣ Final report
@@ -825,13 +831,158 @@ class WorkflowTest(WorkflowManager):
         st.write("📁 Results directory:")   
         st.code(str(results_dir)) 
 
-
-        st.write("📄 Generated files:")
-        st.write(f"- mzTab: {quant_mztab}")
-        st.write(f"- consensusXML: {quant_cxml}")
-        st.write(f"- MSstats CSV: {quant_msstats}")
-
         return True
+    
+    def _run_go_enrichment(self, pivot_df: pd.DataFrame, results_dir: Path):
+        p_cutoff = 0.05
+        fc_cutoff = 1.0
+
+        analysis_df = pivot_df.dropna(subset=["p-value", "log2FC"]).copy()
+
+        if analysis_df.empty:
+            st.error("No valid statistical data found for GO enrichment.")
+            self.logger.log("❗ analysis_df is empty")
+        else:
+            with st.spinner("Fetching GO terms from MyGene.info API..."):
+                mg = mygene.MyGeneInfo()
+
+                def get_clean_uniprot(name):
+                    parts = str(name).split("|")
+                    return parts[1] if len(parts) >= 2 else parts[0]
+
+                analysis_df["UniProt"] = analysis_df["ProteinName"].apply(get_clean_uniprot)
+
+                bg_ids = analysis_df["UniProt"].dropna().astype(str).unique().tolist()
+                fg_ids = analysis_df[
+                    (analysis_df["p-value"] < p_cutoff) &
+                    (analysis_df["log2FC"].abs() >= fc_cutoff)
+                ]["UniProt"].dropna().astype(str).unique().tolist()
+                self.logger.log("✅ get_clean_uniprot applied")
+
+                if len(fg_ids) < 3:
+                    st.warning(
+                        f"Not enough significant proteins "
+                        f"(p < {p_cutoff}, |log2FC| ≥ {fc_cutoff}). "
+                        f"Found: {len(fg_ids)}"
+                    )
+                    self.logger.log("❗ Not enough significant proteins")
+                else:
+                    res_list = mg.querymany(
+                        bg_ids, scopes="uniprot", fields="go", as_dataframe=False
+                    )
+                    res_go = pd.DataFrame(res_list)
+                    if "notfound" in res_go.columns:
+                        res_go = res_go[res_go["notfound"] != True]
+
+                    def extract_go_terms(go_data, go_type):
+                        if not isinstance(go_data, dict) or go_type not in go_data:
+                            return []
+                        terms = go_data[go_type]
+                        if isinstance(terms, dict):
+                            terms = [terms]
+                        return list({t.get("term") for t in terms if "term" in t})
+
+                    for go_type in ["BP", "CC", "MF"]:
+                        res_go[f"{go_type}_terms"] = res_go["go"].apply(
+                            lambda x: extract_go_terms(x, go_type)
+                        )
+
+                    annotated_ids = set(res_go["query"].astype(str))
+                    fg_set = annotated_ids.intersection(fg_ids)
+                    bg_set = annotated_ids
+                    self.logger.log(f"✅ fg_set bg_set are set")
+
+                    def run_go(go_type):
+                        go2fg = defaultdict(set)
+                        go2bg = defaultdict(set)
+
+                        for _, row in res_go.iterrows():
+                            uid = str(row["query"])
+                            for term in row[f"{go_type}_terms"]:
+                                go2bg[term].add(uid)
+                                if uid in fg_set:
+                                    go2fg[term].add(uid)
+
+                        records = []
+                        N_fg = len(fg_set)
+                        N_bg = len(bg_set)
+
+                        for term, fg_genes in go2fg.items():
+                            a = len(fg_genes)
+                            if a == 0:
+                                continue
+                            b = N_fg - a
+                            c = len(go2bg[term]) - a
+                            d = N_bg - (a + b + c)
+
+                            _, p = fisher_exact([[a, b], [c, d]], alternative="greater")
+                            records.append({
+                                "GO_Term": term,
+                                "Count": a,
+                                "GeneRatio": f"{a}/{N_fg}",
+                                "p_value": p,
+                            })
+
+                        df = pd.DataFrame(records)
+                        if df.empty:
+                            return None, None
+
+                        df["-log10(p)"] = -np.log10(df["p_value"].replace(0, 1e-10))
+                        df = df.sort_values("p_value").head(20)
+
+                        # ✅ Plotly Figure
+                        fig = px.bar(
+                            df,
+                            x="-log10(p)",
+                            y="GO_Term",
+                            orientation="h",
+                            title=f"GO Enrichment ({go_type})",
+                        )
+
+                        self.logger.log(f"✅ Plotly Figure generated")
+
+                        fig.update_layout(
+                            yaxis=dict(autorange="reversed"),
+                            height=500,
+                            margin=dict(l=10, r=10, t=40, b=10),
+                        )
+
+                        return fig, df
+
+                    go_results = {}
+
+                    for go_type in ["BP", "CC", "MF"]:
+                        fig, df_go = run_go(go_type)
+                        if fig is not None:
+                            go_results[go_type] = {
+                                "fig": fig,
+                                "df": df_go
+                            }
+                    self.logger.log(f"✅ go_type generated")
+
+                    go_dir = results_dir / "go-terms"
+                    go_dir.mkdir(parents=True, exist_ok=True)
+
+                    import json
+                    go_data = {}
+                    
+                    for go_type in ["BP", "CC", "MF"]:
+                        if go_type in go_results:
+                            fig = go_results[go_type]["fig"]
+                            df = go_results[go_type]["df"]
+                            
+                            go_data[go_type] = {
+                                "fig_json": fig.to_json(),  # Figure → JSON string
+                                "df_dict": df.to_dict(orient="records")  # DataFrame → list of dicts
+                            }
+                    
+                    go_json_file = go_dir / "go_results.json"
+                    with open(go_json_file, "w") as f:
+                        json.dump(go_data, f)
+                    st.session_state["go_results"] = go_results
+                    st.session_state["go_ready"] = True if go_data else False
+                    self.logger.log("✅ GO enrichment analysis complete")
+        
 
     @st.fragment
     def results(self) -> None:

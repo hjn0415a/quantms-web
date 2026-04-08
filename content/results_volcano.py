@@ -32,9 +32,9 @@ if pivot_df.empty:
     st.stop()
 
 volcano_df = pivot_df.copy()
-volcano_df = volcano_df.dropna(subset=["log2FC", "p-value"])
+volcano_df = volcano_df.dropna(subset=["log2FC", "p-adj"])
 
-volcano_df["neg_log10_p"] = -np.log10(volcano_df["p-value"])
+volcano_df["neg_log10_padj"] = -np.log10(volcano_df["p-adj"])
 
 fc_thresh = st.slider(
     "log2 Fold Change threshold",
@@ -45,7 +45,7 @@ fc_thresh = st.slider(
 )
 
 p_thresh = st.slider(
-    "p-value threshold",
+    "p-adj (FDR) threshold",
     min_value=0.001,
     max_value=0.1,
     value=0.05,
@@ -54,21 +54,26 @@ p_thresh = st.slider(
 
 volcano_df["Significance"] = "Not significant"
 volcano_df.loc[
-    (volcano_df["p-value"] <= p_thresh) & (volcano_df["log2FC"] >= fc_thresh),
+    (volcano_df["p-adj"] <= p_thresh) & (volcano_df["log2FC"] >= fc_thresh),
     "Significance",
 ] = "Up-regulated"
 
 volcano_df.loc[
-    (volcano_df["p-value"] <= p_thresh) & (volcano_df["log2FC"] <= -fc_thresh),
+    (volcano_df["p-adj"] <= p_thresh) & (volcano_df["log2FC"] <= -fc_thresh),
     "Significance",
 ] = "Down-regulated"
 
 fig_volcano = px.scatter(
     volcano_df,
     x="log2FC",
-    y="neg_log10_p",
+    y="neg_log10_padj",
     color="Significance",
-    hover_data=["ProteinName", "p-value"],
+    hover_data=["ProteinName", "log2FC", "p-value", "p-adj"],
+    color_discrete_map={
+        "Up-regulated": "red",
+        "Down-regulated": "blue",
+        "Not significant": "lightgrey",
+    }
 )
 
 fig_volcano.add_vline(x=fc_thresh, line_dash="dash")
@@ -81,7 +86,7 @@ x_range = [-max_abs_fc * 1.1, max_abs_fc * 1.1]  # 10% padding
 
 fig_volcano.update_layout(
     xaxis_title="log2 Fold Change",
-    yaxis_title="-log10(p-value)",
+    yaxis_title="-log10(p-adj)",
     xaxis_range=x_range,
     height=600,
 )
