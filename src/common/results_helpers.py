@@ -184,12 +184,15 @@ def build_spectra_cache(mzml_dir: Path, filename_to_index: dict) -> tuple[pl.Dat
 
 
 @st.cache_data
-def load_abundance_data(workspace_path: str, csv_mtime: float) -> tuple | None:
+def load_abundance_data(workspace_path: str, csv_mtime: float, params_mtime: float = 0.0) -> tuple | None:
     """Load CSV, compute stats (log2FC, p-value), build pivot_df and expr_df.
 
     Args:
         workspace_path: Path to the workspace directory
         csv_mtime: Modification time of CSV file (used as cache key)
+        params_mtime: Modification time of params.json (used as cache key so
+            changing group assignments in Configure invalidates the cache
+            even when the CSV itself hasn't changed)
 
     Returns:
         Tuple of (pivot_df, expr_df, group_map) or None if data unavailable
@@ -483,7 +486,7 @@ def load_abundance_data(workspace_path: str, csv_mtime: float) -> tuple | None:
 
 
 def get_abundance_data(workspace: Path) -> tuple | None:
-    """Wrapper that handles cache key (workspace + CSV mtime).
+    """Wrapper that handles cache key (workspace + CSV mtime + params mtime).
 
     Args:
         workspace: Path to the workspace directory
@@ -502,7 +505,11 @@ def get_abundance_data(workspace: Path) -> tuple | None:
         return None
 
     csv_mtime = csv_files[0].stat().st_mtime
-    return load_abundance_data(str(workspace), csv_mtime)
+
+    params_file = workflow_dir / "params.json"
+    params_mtime = params_file.stat().st_mtime if params_file.exists() else 0.0
+
+    return load_abundance_data(str(workspace), csv_mtime, params_mtime)
 
 
 def get_id_column(workspace: Path, pivot_df: pd.DataFrame) -> str:
