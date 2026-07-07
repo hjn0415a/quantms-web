@@ -1,12 +1,10 @@
 """PCA Results Page."""
-import streamlit as st
 import pandas as pd
-import plotly.express as px
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
+import polars as pl
+import streamlit as st
 from src.common.common import page_setup
-from src.common.results_helpers import get_abundance_data, get_workflow_dir
-from src.workflow.ParameterManager import ParameterManager
+from src.common.results_helpers import get_abundance_data, get_id_column, get_sample_group_map
+from openms_insight import PCAPlot
 
 params = page_setup()
 st.title("PCA Analysis")
@@ -14,7 +12,7 @@ st.title("PCA Analysis")
 st.markdown(
     """
 Principal Component Analysis (PCA) of protein-level abundance.
-Samples are colored by group assignment to visualize clustering.
+Samples are projected onto their principal components and colored by group assignment to visualize clustering.
 """
 )
 
@@ -22,6 +20,7 @@ if "workspace" not in st.session_state:
     st.warning("Please initialize your workspace first.")
     st.stop()
 
+# 1. Load abundance data (base wide-format table + sample -> group mapping)
 result = get_abundance_data(st.session_state["workspace"])
 if result is None:
     st.info("Abundance data not available. Please run the workflow and configure sample groups first.")
@@ -29,88 +28,143 @@ if result is None:
     st.stop()
 
 pivot_df, expr_df, group_map = result
+id_col = get_id_column(st.session_state["workspace"], pivot_df)
+sample_group_map = get_sample_group_map(st.session_state["workspace"], pivot_df, group_map)
 
-workflow_dir = get_workflow_dir(st.session_state["workspace"])
-parameter_manager = ParameterManager(workflow_dir, "TOPP Workflow")
-workflow_params = parameter_manager.get_parameters_from_json() 
-analysis_mode = workflow_params.get("analysis-mode", "LFQ")
-
-st.write("Workflow Analysis Mode:", analysis_mode)
-
-top_n = 500
-
-if analysis_mode == "LFQ":
-    protein_col = "ProteinName"
+# --- STEP 1: Upstream Pipeline Tracker (Fallback Architecture) ---
+# Mirrors statistical.py: PCA should run on the most-processed data available.
+if (
+    "normalized_df" in st.session_state
+    and st.session_state["normalized_df"] is not None
+):
+    base_df = st.session_state["normalized_df"]
+    st.info(
+        "🔄 **Upstream Pipeline Detected**: Using data processed from the **Normalization** step."
+    )
+elif (
+    "imputed_df" in st.session_state
+    and st.session_state["imputed_df"] is not None
+):
+    base_df = st.session_state["imputed_df"]
+    st.warning(
+        "⚠️ **Normalization Skipped**: Using data processed from the **Imputation** step."
+    )
+elif (
+    "filtered_df" in st.session_state
+    and st.session_state["filtered_df"] is not None
+):
+    base_df = st.session_state["filtered_df"]
+    st.warning(
+        "⚠️ **Preprocessing Skipped**: Using data processed from the **Filtering** step."
+    )
 else:
-    protein_col = "protein"
+    base_df = pivot_df
+    st.warning(
+        "⚠️ **Raw Input Active**: No preprocessing history found. Operating on the original table."
+    )
 
-top_proteins = (
-    pivot_df
-    .dropna(subset=["p-adj"])
-    .sort_values("p-adj", ascending=True)
-    .head(top_n)[protein_col]
-)
-
-expr_df_pca = expr_df.loc[
-    expr_df.index.intersection(top_proteins)
+# 2. Extract active sample columns and detect unique biological groups
+sample_cols = [
+    c for c in base_df.columns
+    if c not in [id_col, "PeptideSequence", "log2FC", "p-adj", "stat", "p-value"]
 ]
+unique_groups = sorted({sample_group_map[s] for s in sample_cols if s in sample_group_map})
 
-if expr_df_pca.shape[0] < 2:
-    st.info("Not enough proteins after p-value filtering for PCA.")
+if len(sample_cols) < 2:
+    st.info("PCA requires at least 2 samples.")
     st.stop()
 
-X = expr_df_pca.T
-X_scaled = StandardScaler().fit_transform(X)
+if len(unique_groups) < 2:
+    st.warning(
+        "Only one biological group was detected - points will still be plotted, "
+        "but group-based coloring requires 2 or more groups."
+    )
 
-pca = PCA(n_components=2)
-pcs = pca.fit_transform(X_scaled)
-
-pca_df = pd.DataFrame(
-    pcs,
-    columns=["PC1", "PC2"],
-    index=X.index
+# --- SECTION 1: Active Input Table Preview ---
+st.subheader("Input Table Overview")
+st.markdown(
+    f"Currently analyzing **{base_df.shape[0]}** rows across **{len(sample_cols)}** samples "
+    f"belonging to **{len(unique_groups)} groups** ({', '.join(unique_groups)})."
 )
+st.dataframe(base_df, use_container_width=True)
 
-if analysis_mode == "LFQ":
-    norm_map = {
-        k.replace(".mzML", ""): v
-        for k, v in group_map.items()
-    }
+st.markdown("---")
+
+# --- SECTION 2: PCA Configuration ---
+st.subheader("Configure PCA")
+
+expr_df_wide = base_df.set_index(id_col)[sample_cols]
+max_available = expr_df_wide.shape[0]
+
+if max_available <= 20:
+    top_n = max_available
+    st.caption(f"Using all {top_n} proteins for PCA (dataset too small for variance filtering).")
 else:
-    actual_sample_names = pca_df.index.tolist()
-    norm_map = {}
-    for k, v in group_map.items():
-        try:
-            sample_idx = int(k) + 1
-            target_substring = f"sample{sample_idx}["
-            real_full_name = next((name for name in actual_sample_names if target_substring in name), None)
-            
-            if real_full_name:
-                norm_map[real_full_name] = v if v and v.strip() else "Unassigned"
-        except ValueError:
-            continue
+    top_n = st.slider(
+        "Number of proteins (Highest Variance)",
+        min_value=20,
+        max_value=min(5000, max_available),
+        value=min(500, max_available),
+        step=10,
+        key="pca_top_n",
+        help=(
+            "PCA is computed only on the N proteins with the highest variance "
+            "across samples, to reduce noise from low-variance/uninformative features."
+        ),
+    )
 
-pca_df["Group"] = pca_df.index.map(norm_map)
+top_proteins = expr_df_wide.var(axis=1).sort_values(ascending=False).head(top_n).index
+expr_df_pca = expr_df_wide.loc[top_proteins].reset_index()
 
-fig_pca = px.scatter(
-    pca_df,
-    x="PC1",
-    y="PC2",
-    color="Group",
-    text=pca_df.index,
+if expr_df_pca.shape[0] < 2:
+    st.info("Not enough proteins after variance filtering for PCA.")
+    st.stop()
+
+# Prepare structural Polars metadata DataFrame required by PCAPlot
+metadata_pl = pl.DataFrame(
+    [{"sample_id": s, "group": sample_group_map[s]} for s in sample_cols if s in sample_group_map],
+    schema={"sample_id": pl.String, "group": pl.String},
 )
+pca_lazy = pl.from_pandas(expr_df_pca).lazy()
 
-fig_pca.update_traces(textposition="top center")
-fig_pca.update_layout(
-    xaxis_title=f"PC1 ({pca.explained_variance_ratio_[0]*100:.1f}%)",
-    yaxis_title=f"PC2 ({pca.explained_variance_ratio_[1]*100:.1f}%)",
-    height=600,
+# 3. Initialize the OpenMS-Insight PCAPlot component (computes PCA internally)
+try:
+    pca_component = PCAPlot(
+        cache_id="quantms_pca_plot",
+        data=pca_lazy,
+        metadata=metadata_pl,
+        sample_id_field="sample_id",
+        group_field="group",
+        n_components=5,
+        title="Sample PCA",
+    )
+except ValueError as e:
+    st.error(f"PCA computation failed: {e}")
+    st.stop()
+
+variance_ratio = pca_component.get_variance_ratio()
+pc_columns = pca_component.get_pc_columns()
+
+# 4. Let the user pick which component pair to view (no recomputation needed)
+col1, col2 = st.columns(2)
+with col1:
+    pc_x_label = st.selectbox("X-axis component", pc_columns, index=0, key="pca_pc_x")
+with col2:
+    default_y_index = 1 if len(pc_columns) > 1 else 0
+    pc_y_label = st.selectbox("Y-axis component", pc_columns, index=default_y_index, key="pca_pc_y")
+
+pc_x = int(pc_x_label.replace("PC", ""))
+pc_y = int(pc_y_label.replace("PC", ""))
+
+# 5. Render the component
+state_manager = st.session_state.get("state")
+pca_component(state_manager=state_manager, pc_x=pc_x, pc_y=pc_y, height=600)
+
+st.markdown(
+    "**Explained variance:** "
+    + ", ".join(f"{col} {ratio * 100:.1f}%" for col, ratio in zip(pc_columns, variance_ratio))
 )
-
-st.plotly_chart(fig_pca, width="stretch")
-
-st.markdown(f"**Proteins used:** {expr_df_pca.shape[0]} (top {top_n} by p-adj)")
-st.markdown(f"**Proteins used:** {expr_df_pca.shape[0]} (top {top_n} by p-adj)")
+st.markdown(f"**Proteins used:** {expr_df_pca.shape[0]} (top {top_n} by variance)")
 
 st.markdown("---")
 st.markdown("**Other visualizations:**")

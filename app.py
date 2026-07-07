@@ -1,3 +1,10 @@
+import os
+# Polars' default (CPU-core-count-sized) native thread pool access-violation
+# crashes the whole process on some high-core-count Windows machines when
+# invoked from Streamlit's script-runner thread. Must be set before polars
+# is imported anywhere (including transitively via openms_insight).
+os.environ.setdefault("POLARS_MAX_THREADS", "1")
+
 import streamlit as st
 from pathlib import Path
 import json
@@ -23,12 +30,19 @@ if __name__ == '__main__':
             st.Page(Path("content", "results_rescoring.py"), title="Rescoring", icon="📈"),
             st.Page(Path("content", "results_filtered.py"), title="Filtered PSMs", icon="🎯"),
             st.Page(Path("content", "results_abundance.py"), title="Abundance", icon="📋"),
+            st.Page(Path("content", "results_library.py"), title="Spectral Library", icon="📚"),
+            st.Page(Path("content", "enrichment.py"), title="Pathway Analysis", icon="📉"),
+        ],
+        "Differential Protein Analysis": [
+            st.Page(Path("content", "filtering.py"), title="Filtering", icon="🧹"),
+            st.Page(Path("content", "imputation.py"), title="Imputation", icon="🩹"),
+            st.Page(Path("content", "normalization.py"), title="Normalization", icon="⚖️"),
+            st.Page(Path("content", "statistical.py"), title="Statistical", icon="🔢"),
             st.Page(Path("content", "results_volcano.py"), title="Volcano", icon="🌋"),
             st.Page(Path("content", "results_pca.py"), title="PCA", icon="📊"),
             st.Page(Path("content", "results_heatmap.py"), title="Heatmap", icon="🔥"),
-            st.Page(Path("content", "results_library.py"), title="Spectral Library", icon="📚"),
-            st.Page(Path("content", "results_pathway_analysis.py"), title="Pathway Analysis", icon="📉"),
-        ],
+            st.Page(Path("content", "results_heatmap_clustered.py"), title="Clustered Heatmap", icon="🧬"),
+        ]
     }
 
     pg = st.navigation(pages)

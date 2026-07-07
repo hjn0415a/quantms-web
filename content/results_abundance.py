@@ -1,6 +1,7 @@
 """Abundance (ProteomicsLFQ) Results Page."""
 import streamlit as st
 import pandas as pd
+import numpy as np
 from pathlib import Path
 from src.common.common import page_setup
 from src.common.results_helpers import get_workflow_dir, get_abundance_data
@@ -132,7 +133,7 @@ try:
         if result is None:
             st.info("💡 Please complete the configuration in the 'Configure' page to see results.")
             st.stop()
-            
+
         pivot_df, expr_df, group_map = result
 
         with pre_processing_tab:

@@ -142,6 +142,11 @@ scipy
 scikit-learn
 openms-insight>=0.1.13
 polars>=1.0.0
+# Forces polars to prefer its most CPU-compatible native runtime.
+# Without this, polars can select an AVX-optimized runtime (e.g. runtime-32)
+# that access-violation crashes (0xC0000005 in _polars_runtime.pyd) on some
+# CPUs (seen on AMD Threadripper PRO 3995WX on Windows) during dataframe ops.
+polars-runtime-compat
 cython
 easypqp>=0.1.34
 pyprophet>=2.2.0
@@ -150,3 +155,4 @@ mygene
 redis>=5.0.0
 rq>=1.16.0
 statsmodels
+polars

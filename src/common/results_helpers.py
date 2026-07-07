@@ -9,7 +9,6 @@ from scipy.stats import ttest_ind
 from pyopenms import IdXMLFile, MSExperiment, MzMLFile
 from src.workflow.ParameterManager import ParameterManager
 from statsmodels.stats.multitest import multipletests
-from statsmodels.stats.multitest import multipletests
 
 def get_workflow_dir(workspace):
     """Get the workflow directory path."""
@@ -200,7 +199,7 @@ def load_abundance_data(workspace_path: str, csv_mtime: float) -> tuple | None:
 
     parameter_manager = ParameterManager(workflow_dir, "TOPP Workflow")
 
-    workflow_params = parameter_manager.get_parameters_from_json() 
+    workflow_params = parameter_manager.get_parameters_from_json()
     analysis_mode = workflow_params.get("analysis-mode", "LFQ")
 
     if analysis_mode == "LFQ":
@@ -309,7 +308,7 @@ def load_abundance_data(workspace_path: str, csv_mtime: float) -> tuple | None:
         expr_df = expr_df.dropna()
 
         return pivot_df, expr_df, group_map
-    
+
     else:
         if not quant_dir.exists():
             return None
@@ -330,7 +329,7 @@ def load_abundance_data(workspace_path: str, csv_mtime: float) -> tuple | None:
 
         # ratio column removal
         df = df.loc[:, ~df.columns.str.contains('ratio', case=False)]
-        
+
         # exclude_indices = st.session_state.get("tmt_exclude_indices", [])
         # group_map = st.session_state.get("tmt_group_map", {})
         # Get group mapping from parameters
@@ -365,7 +364,7 @@ def load_abundance_data(workspace_path: str, csv_mtime: float) -> tuple | None:
         if not group_map:
             st.warning("⚠️ Group mapping information is missing. Please configure sample groups in the Setup page.")
             return None
-        
+
         if exclude_indices:
             # st.write("Current columns:", df.columns.tolist())
             # st.write("Number of columns:", len(df.columns))
@@ -381,7 +380,7 @@ def load_abundance_data(workspace_path: str, csv_mtime: float) -> tuple | None:
             # Create a list with the same length as the column order of df_cleaned
             new_row = [""] * len(df_cleaned.columns)
             new_row[0] = "Group"
-            
+
             # Get the column names of the current dataframe as a list
             current_cols = df_cleaned.columns.tolist()
             original_cols = df.columns.tolist()
@@ -399,7 +398,7 @@ def load_abundance_data(workspace_path: str, csv_mtime: float) -> tuple | None:
 
             # drop_msg = f"{len(exclude_indices)} channels dropped" if exclude_indices else "No channels dropped"
             # st.success(f"✅ {drop_msg} and Group names have been inserted at the top of the data.")
-            
+
             # st.write("### Data Preview with Group Information")
             # st.dataframe(df_with_groups.head(10))
 
@@ -408,7 +407,7 @@ def load_abundance_data(workspace_path: str, csv_mtime: float) -> tuple | None:
                 # Extract group information from row 0 of df_with_groups (the newly added Group row)
                 # Actual sample data starts from the 5th column (index 4)
                 group_info_row = df_with_groups.iloc[0]
-                
+
                 # Get unique group names (excluding NA)
                 unique_groups = sorted([g for g in set(group_map.values()) if g != "NA"])
                 g1_name, g2_name = unique_groups[0], unique_groups[1]
@@ -416,7 +415,7 @@ def load_abundance_data(workspace_path: str, csv_mtime: float) -> tuple | None:
                 # Extract numerical data for statistical calculation (from row 1 and column index 4 onwards)
                 # Convert to numeric type (to prevent calculation errors)
                 numeric_data = df_with_groups.iloc[1:, 4:].apply(pd.to_numeric, errors='coerce')
-                
+
                 # Column indexing by group
                 # Categorize columns based on the values in the Group row
                 g1_cols = [col for col in numeric_data.columns if group_info_row[col] == g1_name]
@@ -426,11 +425,11 @@ def load_abundance_data(workspace_path: str, csv_mtime: float) -> tuple | None:
                 def run_stats(row):
                     v1 = row[g1_cols].dropna()
                     v2 = row[g2_cols].dropna()
-                    
+
                     # log2FC (Group2 / Group1)
                     m1, m2 = v1.mean(), v2.mean()
                     l2fc = np.log2(m2 / m1) if m1 > 0 and m2 > 0 else np.nan
-                    
+
                     # p-value (T-test)
                     if len(v1) > 1 and len(v2) > 1:
                         _, pval = ttest_ind(v1, v2, equal_var=False)
@@ -462,16 +461,16 @@ def load_abundance_data(workspace_path: str, csv_mtime: float) -> tuple | None:
                 # Set the first column ('protein') of final_df as the index
                 protein_col = pivot_df.columns[0]
                 sample_cols = current_cols[start_column_offset:] # Identify actual sample column names
-                
+
                 # Select sample columns and create a matrix
                 expr_df = pivot_df.set_index(protein_col)[sample_cols]
-                
+
                 # Replace 0 with NaN (to prevent log transformation errors)
                 expr_df = expr_df.replace(0, np.nan)
-                
+
                 # Log2 transformation (data normalization)
                 expr_df = np.log2(expr_df + 1)
-                
+
                 # Remove proteins (rows) with any missing values
                 expr_df = expr_df.dropna()
 
@@ -504,3 +503,44 @@ def get_abundance_data(workspace: Path) -> tuple | None:
 
     csv_mtime = csv_files[0].stat().st_mtime
     return load_abundance_data(str(workspace), csv_mtime)
+
+
+def get_id_column(workspace: Path, pivot_df: pd.DataFrame) -> str:
+    """Resolve the protein/row identifier column for the active analysis mode.
+
+    LFQ reports always use "ProteinName"; TMT reports use whatever the
+    report's first column is actually named (e.g. "protein").
+    """
+    workflow_dir = get_workflow_dir(workspace)
+    analysis_mode = ParameterManager(workflow_dir, "TOPP Workflow").get_parameters_from_json().get("analysis-mode", "LFQ")
+    return "ProteinName" if analysis_mode == "LFQ" else pivot_df.columns[0]
+
+
+def get_sample_group_map(workspace: Path, pivot_df: pd.DataFrame, group_map: dict) -> dict:
+    """Normalize group_map into {actual_sample_column_name: group_name}.
+
+    LFQ group_map keys are already clean sample names (optionally with a
+    ".mzML" suffix). TMT group_map keys are 0-based channel indices that must
+    be matched against the report's actual "sampleN[...]" column names.
+    """
+    workflow_dir = get_workflow_dir(workspace)
+    analysis_mode = ParameterManager(workflow_dir, "TOPP Workflow").get_parameters_from_json().get("analysis-mode", "LFQ")
+
+    if analysis_mode == "LFQ":
+        return {
+            k[:-5] if k.endswith(".mzML") else k: v
+            for k, v in group_map.items()
+        }
+
+    actual_sample_names = pivot_df.columns.tolist()
+    norm_map = {}
+    for k, v in group_map.items():
+        try:
+            sample_idx = int(k) + 1
+        except (TypeError, ValueError):
+            continue
+        target_substring = f"sample{sample_idx}["
+        real_full_name = next((name for name in actual_sample_names if target_substring in name), None)
+        if real_full_name:
+            norm_map[real_full_name] = v if v and v.strip() else "Unassigned"
+    return norm_map
