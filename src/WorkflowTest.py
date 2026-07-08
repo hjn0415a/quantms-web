@@ -561,7 +561,7 @@ class WorkflowTest(WorkflowManager):
             st.markdown("### 🧪 TMT Sample Group Assignment")
             
             # 1. Determine TMT type (e.g., tmt10plex, tmt16plex)
-            target_key = f"{self.parameter_manager.topp_param_prefix}IsobaricAnalyzer:1:type"
+            target_key = f"{self.parameter_manager.topp_param_prefix}IsobaricAnalyzer-TMT:1:type"
             selected_tmt = st.session_state.get(target_key, "tmt12plex")
 
             if "tmt" in selected_tmt:
