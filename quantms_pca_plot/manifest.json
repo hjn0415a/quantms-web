@@ -1,0 +1,48 @@
+{
+  "version": 3,
+  "component_type": "pca",
+  "created_at": "2026-07-13T15:24:53.342880",
+  "config_hash": "6fb681b6a62f0321e7ffa53595c10f325bf8aa3a648d19ca10245c9a986da894",
+  "config": {
+    "metadata_map": {
+      "abundance_sample5[unknown]": "a",
+      "abundance_sample6[unknown]": "a",
+      "abundance_sample7[unknown]": "a",
+      "abundance_sample8[unknown]": "b",
+      "abundance_sample9[unknown]": "b",
+      "abundance_sample10[unknown]": "b",
+      "abundance_sample11[unknown]": "b"
+    },
+    "sample_id_field": "sample_id",
+    "group_field": "group",
+    "n_components": 5,
+    "standardize": true,
+    "title": "Sample PCA",
+    "x_label": null,
+    "y_label": null,
+    "category_colors": {}
+  },
+  "filters": {},
+  "filter_defaults": {},
+  "interactivity": {},
+  "data_files": {
+    "pcaData": "pcaData.parquet"
+  },
+  "data_values": {
+    "variance_ratio": [
+      0.5900567701581433,
+      0.19195401911479784,
+      0.11555066295399101,
+      0.05039816818118009,
+      0.03460308386109772
+    ],
+    "n_components": 5,
+    "pc_columns": [
+      "PC1",
+      "PC2",
+      "PC3",
+      "PC4",
+      "PC5"
+    ]
+  }
+}

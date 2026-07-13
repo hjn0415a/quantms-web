@@ -10,6 +10,13 @@ from src.common.results_helpers import get_abundance_data, get_id_column, get_sa
 # Import imputation algorithms from openms_insight engine
 from openms_insight.analysis.imputation import impute_mar, impute_smallest_value
 
+STAT_COLUMNS = ["log2FC", "p-value", "p-adj", "stat"]
+
+
+def strip_stat_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Keep preprocessing tables intensity-only before statistical analysis."""
+    return df.drop(columns=[c for c in STAT_COLUMNS if c in df.columns], errors="ignore")
+
 params = page_setup()
 st.title("Missing Value Imputation")
 
@@ -35,12 +42,14 @@ if result is None:
     st.stop()
 
 pivot_df, expr_df, group_map = result
+pivot_df = strip_stat_columns(pivot_df)
 id_col = get_id_column(st.session_state["workspace"], pivot_df)
 sample_group_map = get_sample_group_map(st.session_state["workspace"], pivot_df, group_map)
 
 # 1. Pipeline Checkpoint: Fetch upstream filtered data if available, fallback to raw pivot matrix
 if "filtered_df" in st.session_state and st.session_state["filtered_df"] is not None:
-    base_df = st.session_state["filtered_df"]
+    base_df = strip_stat_columns(st.session_state["filtered_df"])
+    st.session_state["filtered_df"] = base_df
     st.info(
         "🔄 **Upstream Pipeline Detected**: Using data processed from the **Filtering** step."
     )
@@ -124,7 +133,7 @@ if st.button("Apply Imputation", type="primary"):
         )
 
     # Resolve lazy graph optimization tree and push to display data frame structure
-    imputed_df = imputed_lazy.collect().to_pandas()
+    imputed_df = strip_stat_columns(imputed_lazy.collect().to_pandas())
 
     # 💾 Save current output into Session State for down-stream processing (Normalization, Statistics)
     st.session_state["imputed_df"] = imputed_df

@@ -13,6 +13,15 @@ from openms_insight.analysis.normalization import (
     transform_data,
 )
 
+STAT_COLUMNS = ["log2FC", "p-value", "p-adj", "stat"]
+
+
+def strip_stat_columns(df: pd.DataFrame | None) -> pd.DataFrame | None:
+    """Keep preprocessing tables intensity-only before statistical analysis."""
+    if df is None:
+        return None
+    return df.drop(columns=[c for c in STAT_COLUMNS if c in df.columns], errors="ignore")
+
 params = page_setup()
 st.title("Data Normalization & Scaling")
 
@@ -38,15 +47,26 @@ if result is None:
     st.stop()
 
 pivot_df, expr_df, group_map = result
+pivot_df = strip_stat_columns(pivot_df)
 id_col = get_id_column(st.session_state["workspace"], pivot_df)
 sample_group_map = get_sample_group_map(st.session_state["workspace"], pivot_df, group_map)
+
+filtered_df = strip_stat_columns(st.session_state.get("filtered_df"))
+imputed_df = strip_stat_columns(st.session_state.get("imputed_df"))
+normalized_df = strip_stat_columns(st.session_state.get("normalized_df"))
+if filtered_df is not None:
+    st.session_state["filtered_df"] = filtered_df
+if imputed_df is not None:
+    st.session_state["imputed_df"] = imputed_df
+if normalized_df is not None:
+    st.session_state["normalized_df"] = normalized_df
 
 # --- STEP 1: Upstream Pipeline Tracker (Fallback Architecture) ---
 if (
     "imputed_df" in st.session_state
     and st.session_state["imputed_df"] is not None
 ):
-    base_df = st.session_state["imputed_df"]
+    base_df = imputed_df
     st.info(
         "🔄 **Upstream Pipeline Detected**: Using data processed from the **Imputation** step."
     )
@@ -54,7 +74,7 @@ elif (
     "filtered_df" in st.session_state
     and st.session_state["filtered_df"] is not None
 ):
-    base_df = st.session_state["filtered_df"]
+    base_df = filtered_df
     st.warning(
         "⚠️ **Imputation Skipped**: Using data processed from the **Filtering** step."
     )
@@ -75,6 +95,44 @@ st.markdown(
     f"Currently displaying **{base_df.shape[0]}** rows and **{len(sample_cols)}** samples entering the normalization block."
 )
 st.dataframe(base_df, use_container_width=True)
+
+st.markdown("### Pipeline Overview")
+st.caption("Data flows in order: Filtering -> Imputation -> Normalization")
+
+step_rows = [
+    {
+        "Step": "Filtering",
+        "Status": "Done" if filtered_df is not None else "Not run",
+        "Rows": filtered_df.shape[0] if filtered_df is not None else "-",
+        "Cols": filtered_df.shape[1] if filtered_df is not None else "-",
+    },
+    {
+        "Step": "Imputation",
+        "Status": "Done" if imputed_df is not None else "Not run",
+        "Rows": imputed_df.shape[0] if imputed_df is not None else "-",
+        "Cols": imputed_df.shape[1] if imputed_df is not None else "-",
+    },
+    {
+        "Step": "Normalization",
+        "Status": "Done" if normalized_df is not None else "Not run",
+        "Rows": normalized_df.shape[0] if normalized_df is not None else "-",
+        "Cols": normalized_df.shape[1] if normalized_df is not None else "-",
+    },
+]
+st.dataframe(pd.DataFrame(step_rows), hide_index=True, use_container_width=True)
+
+with st.expander("Show step tables", expanded=False):
+    if filtered_df is not None:
+        st.markdown("#### Filtering output")
+        st.dataframe(filtered_df.head(10), use_container_width=True)
+    if imputed_df is not None:
+        st.markdown("#### Imputation output")
+        st.dataframe(imputed_df.head(10), use_container_width=True)
+    if normalized_df is not None:
+        st.markdown("#### Normalization output")
+        st.dataframe(normalized_df.head(10), use_container_width=True)
+    if filtered_df is None and imputed_df is None and normalized_df is None:
+        st.info("No preprocessing outputs yet. Start from Filtering.")
 
 st.markdown("---")
 
@@ -166,7 +224,7 @@ if st.button("Apply Normalization Pipelines", type="primary"):
         )
 
         # Finalize and collect pipeline query graph optimizations
-        normalized_df = processing_lazy.collect().to_pandas()
+        normalized_df = strip_stat_columns(processing_lazy.collect().to_pandas())
 
         # 💾 Save processing checkpoint inside Session State for Downstream (Statistics Block)
         st.session_state["normalized_df"] = normalized_df

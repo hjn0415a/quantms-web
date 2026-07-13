@@ -1,0 +1,49 @@
+{
+  "version": 3,
+  "component_type": "heatmap",
+  "created_at": "2026-07-13T15:28:34.237524",
+  "config_hash": "02d3e06be12f67150dcf76daa46b8e7f6b209e14d8f083133d9647a6d8fff4c5",
+  "config": {
+    "x_column": "Sample",
+    "y_column": "protein",
+    "intensity_column": "Z_score",
+    "min_points": 10000,
+    "display_aspect_ratio": 1.7777777777777777,
+    "x_bins": 188,
+    "y_bins": 106,
+    "use_simple_downsample": false,
+    "use_streaming": true,
+    "categorical_filters": [],
+    "zoom_identifier": "heatmap_zoom",
+    "title": "Protein Abundance Heatmap (Z-score)",
+    "x_label": "Samples",
+    "y_label": "Proteins",
+    "colorscale": "RdBu",
+    "category_column": null,
+    "log_scale": false,
+    "low_values_on_top": false,
+    "intensity_label": "Z-score"
+  },
+  "filters": {},
+  "filter_defaults": {},
+  "interactivity": {},
+  "data_files": {
+    "level_0": "level_0.parquet",
+    "level_1": "level_1.parquet"
+  },
+  "data_values": {
+    "x_range": [
+      "abundance_sample10[unknown]",
+      "abundance_sample9[unknown]"
+    ],
+    "y_range": [
+      "sp|O43181|NDUS4_HUMAN",
+      "sp|Q9Y673|ALG5_HUMAN"
+    ],
+    "total": 350,
+    "level_sizes": [
+      350
+    ],
+    "num_levels": 2
+  }
+}

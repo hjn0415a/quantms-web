@@ -14,6 +14,13 @@ from openms_insight.analysis.filter import (
     filter_low_variance,
 )
 
+STAT_COLUMNS = ["log2FC", "p-value", "p-adj", "stat"]
+
+
+def strip_stat_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Keep preprocessing tables intensity-only before statistical analysis."""
+    return df.drop(columns=[c for c in STAT_COLUMNS if c in df.columns], errors="ignore")
+
 params = page_setup()
 st.title("Data Filtering")
 
@@ -38,6 +45,7 @@ if result is None:
     st.stop()
 
 pivot_df, expr_df, group_map = result
+pivot_df = strip_stat_columns(pivot_df)
 id_col = get_id_column(st.session_state["workspace"], pivot_df)
 sample_group_map = get_sample_group_map(st.session_state["workspace"], pivot_df, group_map)
 
@@ -142,7 +150,7 @@ if st.button("Apply Filter", type="primary"):
         )
 
     # Collect the evaluated lazy graph and convert back to Pandas for visualization
-    filtered_df = filtered_lazy.collect().to_pandas()
+    filtered_df = strip_stat_columns(filtered_lazy.collect().to_pandas())
     st.session_state["filtered_df"] = filtered_df
 
     # Layout response metrics and the filtered matrix

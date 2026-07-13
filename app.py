@@ -30,8 +30,7 @@ if __name__ == '__main__':
             st.Page(Path("content", "results_rescoring.py"), title="Rescoring", icon="📈"),
             st.Page(Path("content", "results_filtered.py"), title="Filtered PSMs", icon="🎯"),
             st.Page(Path("content", "results_abundance.py"), title="Abundance", icon="📋"),
-            st.Page(Path("content", "results_library.py"), title="Spectral Library", icon="📚"),
-            st.Page(Path("content", "enrichment.py"), title="Pathway Analysis", icon="📉"),
+    
         ],
         "Differential Protein Analysis": [
             st.Page(Path("content", "filtering.py"), title="Filtering", icon="🧹"),
@@ -42,6 +41,7 @@ if __name__ == '__main__':
             st.Page(Path("content", "results_pca.py"), title="PCA", icon="📊"),
             st.Page(Path("content", "results_heatmap.py"), title="Heatmap", icon="🔥"),
             st.Page(Path("content", "results_heatmap_clustered.py"), title="Clustered Heatmap", icon="🧬"),
+            st.Page(Path("content", "enrichment.py"), title="Pathway Analysis", icon="📉"),
         ]
     }
 

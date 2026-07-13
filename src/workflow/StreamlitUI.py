@@ -39,6 +39,11 @@ class StreamlitUI:
         self.parameter_manager = parameter_manager
         self.params = self.parameter_manager.get_parameters_from_json()
 
+    def _refresh_params_cache(self) -> dict:
+        """Keep cached params in sync with params.json across fragment reruns."""
+        self.params = self.parameter_manager.get_parameters_from_json()
+        return self.params
+
     @st.fragment
     def upload_widget(
         self,
@@ -292,6 +297,7 @@ class StreamlitUI:
                 use_container_width=True,
                 key=f"remove-files-{key}",
             ):
+                self._refresh_params_cache()
                 shutil.rmtree(files_dir)
                 if key in self.params:
                     del self.params[key]
@@ -336,6 +342,7 @@ class StreamlitUI:
 
     def _select_input_file_impl(self, key, name, multiple, display_file_path, reactive):
         """Internal implementation of select_input_file - contains all the widget logic."""
+        self._refresh_params_cache()
         if not name:
             name = f"**{key}**"
         path = Path(self.workflow_dir, "input-files", key)
@@ -438,6 +445,7 @@ class StreamlitUI:
         display_file_path, on_change
     ):
         """Internal implementation of input_widget - contains all the widget logic."""
+        self._refresh_params_cache()
 
         def format_files(input: Any) -> List[str]:
             if not display_file_path and Path(input).exists():
@@ -605,8 +613,8 @@ class StreamlitUI:
             st.error(f"Unsupported widget type '{widget_type}'")
 
         self.parameter_manager.save_parameters()
+        self._refresh_params_cache()
 
-    @st.fragment
     def input_TOPP(
         self,
         topp_tool_name: str,
@@ -619,6 +627,7 @@ class StreamlitUI:
         display_subsection_tabs: bool = False,
         custom_defaults: dict = {},
         tool_instance_name: str = None,
+        reactive: bool = False,
     ) -> None:
         """
         Generates input widgets for TOPP tool parameters dynamically based on the tool's
@@ -642,7 +651,79 @@ class StreamlitUI:
                 defaults to topp_tool_name. The instance name is used for session
                 state keys and parameter storage, while topp_tool_name is used for
                 the actual tool executable and ini file creation.
+            reactive (bool, optional): If True, widget changes trigger the parent
+                section to re-render, enabling conditional UI based on this widget's
+                value. Use when downstream UI depends on a parameter value (e.g.,
+                TMT type driving channel count). Default is False.
         """
+        if reactive:
+            self._input_TOPP_impl(
+                topp_tool_name,
+                num_cols,
+                exclude_parameters,
+                include_parameters,
+                flag_parameters,
+                display_tool_name,
+                display_subsections,
+                display_subsection_tabs,
+                custom_defaults,
+                tool_instance_name,
+            )
+        else:
+            self._input_TOPP_fragmented(
+                topp_tool_name,
+                num_cols,
+                exclude_parameters,
+                include_parameters,
+                flag_parameters,
+                display_tool_name,
+                display_subsections,
+                display_subsection_tabs,
+                custom_defaults,
+                tool_instance_name,
+            )
+
+    @st.fragment
+    def _input_TOPP_fragmented(
+        self,
+        topp_tool_name: str,
+        num_cols: int = 4,
+        exclude_parameters: List[str] = [],
+        include_parameters: List[str] = [],
+        flag_parameters: List[str] = [],
+        display_tool_name: bool = True,
+        display_subsections: bool = True,
+        display_subsection_tabs: bool = False,
+        custom_defaults: dict = {},
+        tool_instance_name: str = None,
+    ) -> None:
+        self._input_TOPP_impl(
+            topp_tool_name,
+            num_cols,
+            exclude_parameters,
+            include_parameters,
+            flag_parameters,
+            display_tool_name,
+            display_subsections,
+            display_subsection_tabs,
+            custom_defaults,
+            tool_instance_name,
+        )
+
+    def _input_TOPP_impl(
+        self,
+        topp_tool_name: str,
+        num_cols: int = 4,
+        exclude_parameters: List[str] = [],
+        include_parameters: List[str] = [],
+        flag_parameters: List[str] = [],
+        display_tool_name: bool = True,
+        display_subsections: bool = True,
+        display_subsection_tabs: bool = False,
+        custom_defaults: dict = {},
+        tool_instance_name: str = None,
+    ) -> None:
+        """Internal implementation of input_TOPP - contains all the widget logic."""
         # Default instance name to the tool name when not provided
         if tool_instance_name is None:
             tool_instance_name = topp_tool_name
@@ -1401,6 +1482,7 @@ Started: {status.get('started_at', 'N/A')}""")
 
     def non_default_params_summary(self):
         # Display a summary of non-default TOPP parameters and all others (custom and python scripts)
+        self._refresh_params_cache()
 
         def remove_full_paths(d: dict) -> dict:
             # Create a copy to avoid modifying the original dictionary

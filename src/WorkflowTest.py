@@ -1,5 +1,6 @@
 import streamlit as st
 from pathlib import Path
+import re
 import pandas as pd
 import plotly.express as px
 from streamlit_plotly_events import plotly_events
@@ -409,6 +410,7 @@ class WorkflowTest(WorkflowManager):
                     "quantification:isotope_correction": "false",
                 },
                 tool_instance_name="IsobaricAnalyzer-TMT",
+                reactive=True,
             )
         with t[1]:
             comet_include = [":enzyme", "missed_cleavages", "fixed_modifications", "variable_modifications",
@@ -559,64 +561,62 @@ class WorkflowTest(WorkflowManager):
             )
         with t[10]:
             st.markdown("### 🧪 TMT Sample Group Assignment")
-            
-            # 1. Determine TMT type (e.g., tmt10plex, tmt16plex)
-            target_key = f"{self.parameter_manager.topp_param_prefix}IsobaricAnalyzer-TMT:1:type"
-            selected_tmt = st.session_state.get(target_key, "tmt12plex")
 
-            if "tmt" in selected_tmt:
-                import re
-                # Extract the number to determine the plex count
-                num_plex_match = re.search(r'\d+', selected_tmt)
-                if num_plex_match:
-                    num_plex = int(num_plex_match.group())
-                    all_channels = [f"sample{i+1}" for i in range(num_plex)]
-                    
-                    st.info(
-                        "Enter a group name for each TMT channel.\n\n"
-                        "Type **'skip'** for channels you wish to skip. (e.g., control, case, skip)"
-                    )
+            latest_params = self.parameter_manager.get_parameters_from_json()
+            type_key = (
+                f"{self.parameter_manager.topp_param_prefix}"
+                "IsobaricAnalyzer-TMT:1:type"
+            )
+            selected_type = str(
+                st.session_state.get(type_key)
+                or latest_params.get("IsobaricAnalyzer-TMT", {}).get("type")
+                or "tmt11plex"
+            ).lower()
 
-                    # 2. Create an input_widget for each channel (automatically saved to params.json)
-                    cols = st.columns(2)
-                    for i, ch in enumerate(all_channels):
-                        with cols[i % 2]:
+            m = re.search(r'\d+', selected_type)
+            is_supported_type = any(label in selected_type for label in ["tmt", "itraq"])
+            if not m or not is_supported_type:
+                st.warning("Please select a supported isobaric type in the IsobaricAnalyzer tab first.")
+            else:
+                num_plex = int(m.group())
+                channels = [f"sample{i+1}" for i in range(num_plex)]
+                st.caption(f"Isobaric type: **{selected_type}** - {num_plex} channels")
+                st.info("Assign a group name to each channel. Use **'skip'** to exclude a channel.")
+
+                for row_start in range(0, num_plex, 2):
+                    c1, c2 = st.columns(2)
+
+                    left_idx = row_start
+                    left_channel = channels[left_idx]
+                    with c1:
+                        self.ui.input_widget(
+                            key=f"TMT-group-{left_channel}",
+                            default="",
+                            name=f"Group for channel {left_idx + 1}",
+                            widget_type="text",
+                            help="e.g. control, case, skip",
+                        )
+
+                    right_idx = row_start + 1
+                    if right_idx < num_plex:
+                        right_channel = channels[right_idx]
+                        with c2:
                             self.ui.input_widget(
-                                key=f"TMT-group-{ch}",
+                                key=f"TMT-group-{right_channel}",
                                 default="",
-                                name=f"Group for {ch}",
+                                name=f"Group for channel {right_idx + 1}",
                                 widget_type="text",
-                                help="Enter group name or 'skip' to ignore this channel.",
+                                help="e.g. control, case, skip",
                             )
 
-                    # 3. Read values from params.json and construct a dictionary in tmt_group_map format
-                    # (This can be used later to filter DataFrames in subsequent logic)
-                    self.params = self.parameter_manager.get_parameters_from_json()
-                    
-                    tmt_group_map = {}
-                    for i, ch in enumerate(all_channels):
-                        # Retrieve stored value (default is empty string)
-                        group_val = self.params.get(f"TMT-group-{ch}", "")
-                        tmt_group_map[str(i)] = group_val
-
-                    # For data inspection (remove if not needed)
-                    if st.checkbox("Show current TMT mapping"):
-                        st.json(tmt_group_map)
-                        
-                    # 4. Clean up parameters from unused/previous TMT settings
-                    all_possible_channel_keys = {f"TMT-group-{ch}" for ch in all_channels}
-                    orphaned_keys = [
-                        k for k in self.params.keys() 
-                        if k.startswith("TMT-group-") and k not in all_possible_channel_keys
-                    ]
-                    
-                    if orphaned_keys:
-                        for key in orphaned_keys:
-                            del self.params[key]
-                        self.parameter_manager.save_parameters()
-
-            else:
-                st.warning("Please select a TMT type in the parameters first.")
+                # Remove orphaned params from a previously selected larger plex
+                self.params = self.parameter_manager.get_parameters_from_json()
+                valid_keys = {f"TMT-group-{ch}" for ch in channels}
+                orphaned = [k for k in self.params if k.startswith("TMT-group-") and k not in valid_keys]
+                if orphaned:
+                    for k in orphaned:
+                        del self.params[k]
+                    self.parameter_manager.save_parameters()
 
     def execution(self) -> bool:
         """
