@@ -272,9 +272,10 @@ class CommandExecutor:
         # Load flag parameter names: params.json takes priority (survives session restart),
         # session_state is the live fallback during the current session.
         flag_map = self.parameter_manager.get_parameters_from_json().get("_flag_params", {})
-        if not flag_map:
-            flag_map = st.session_state.get("_topp_flag_params", {})
-        flag_params: set = set(flag_map.get(params_key, []))
+        flag_list = flag_map.get(params_key)
+        if flag_list is None:
+            flag_list = st.session_state.get("_topp_flag_params", {}).get(params_key, [])
+        flag_params: set = set(flag_list)
 
         # Construct commands for each process
         for i in range(n_processes):
@@ -305,12 +306,14 @@ class CommandExecutor:
                     if is_enabled:
                         command += [f"-{k}"]
                     continue
-                # Regular parameter: skip empty/None, append value otherwise
-                if v == "" or v is None:
+                # Regular parameter: skip empty/None/empty-list, append value otherwise
+                if v == "" or v is None or (isinstance(v, list) and not v):
                     continue
                 command += [f"-{k}"]
                 if isinstance(v, str) and "\n" in v:
                     command += v.split("\n")
+                elif isinstance(v, list):
+                    command += [str(x) for x in v]
                 else:
                     command += [str(v)]
             # Add custom parameters
@@ -323,7 +326,7 @@ class CommandExecutor:
                     if is_enabled:
                         command += [f"-{k}"]
                     continue
-                if v == "" or v is None:
+                if v == "" or v is None or (isinstance(v, list) and not v):
                     continue
                 command += [f"-{k}"]
                 if isinstance(v, list):

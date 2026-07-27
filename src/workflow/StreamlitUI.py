@@ -834,36 +834,44 @@ class StreamlitUI:
         reactive: bool = False,
     ) -> None:
         """
-        Wrapper for TOPP parameter input. When `reactive` is True the
-        implementation is rendered directly in the parent context so changes
-        trigger a parent re-render; otherwise the widgets are rendered inside
-        a `st.fragment` to isolate reruns for performance.
+        Generates input widgets for TOPP tool parameters dynamically based on the tool's
+        .ini file. Supports excluding specific parameters and adjusting the layout.
+        File input and output parameters are excluded.
+
+        Args:
+            topp_tool_name (str): The name of the TOPP tool for which to generate inputs.
+            num_cols (int, optional): Number of columns to use for the layout. Defaults to 3.
+            exclude_parameters (List[str], optional): List of parameter names to exclude from the widget. Defaults to an empty list.
+            include_parameters (List[str], optional): List of parameter names to include in the widget. Defaults to an empty list.
+            flag_parameters (List[str], optional): List of parameter names that should
+                be treated as no-value CLI flags during command construction.
+            display_tool_name (bool, optional): Whether to display the TOPP tool name. Defaults to True.
+            display_subsections (bool, optional): Whether to split parameters into subsections based on the prefix. Defaults to True.
+            display_subsection_tabs (bool, optional): Whether to display main subsections in separate tabs (if more than one main section). Defaults to False.
+            custom_defaults (dict, optional): Dictionary of custom defaults to use. Defaults to an empty dict.
+            tool_instance_name (str, optional): A unique instance name for this tool
+                invocation. Allows multiple instances of the same TOPP tool with
+                independent parameters (e.g., two IDFilter calls). If not provided,
+                defaults to topp_tool_name. The instance name is used for session
+                state keys and parameter storage, while topp_tool_name is used for
+                the actual tool executable and ini file creation.
+            reactive (bool, optional): If True, widget changes trigger the parent
+                section to re-render, enabling conditional UI based on this widget's
+                value. Use when downstream UI depends on a parameter value (e.g.,
+                TMT type driving channel count). Default is False.
         """
         if reactive:
-            return self._input_TOPP_impl(
-                topp_tool_name=topp_tool_name,
-                num_cols=num_cols,
-                exclude_parameters=exclude_parameters,
-                include_parameters=include_parameters,
-                flag_parameters=flag_parameters,
-                display_tool_name=display_tool_name,
-                display_subsections=display_subsections,
-                display_subsection_tabs=display_subsection_tabs,
-                custom_defaults=custom_defaults,
-                tool_instance_name=tool_instance_name,
+            self._input_TOPP_impl(
+                topp_tool_name, num_cols, exclude_parameters, include_parameters,
+                flag_parameters, display_tool_name, display_subsections,
+                display_subsection_tabs, custom_defaults, tool_instance_name,
             )
-        return self._input_TOPP_fragmented(
-            topp_tool_name=topp_tool_name,
-            num_cols=num_cols,
-            exclude_parameters=exclude_parameters,
-            include_parameters=include_parameters,
-            flag_parameters=flag_parameters,
-            display_tool_name=display_tool_name,
-            display_subsections=display_subsections,
-            display_subsection_tabs=display_subsection_tabs,
-            custom_defaults=custom_defaults,
-            tool_instance_name=tool_instance_name,
-        )
+        else:
+            self._input_TOPP_fragmented(
+                topp_tool_name, num_cols, exclude_parameters, include_parameters,
+                flag_parameters, display_tool_name, display_subsections,
+                display_subsection_tabs, custom_defaults, tool_instance_name,
+            )
 
     @st.fragment
     def _input_TOPP_fragmented(
@@ -879,17 +887,10 @@ class StreamlitUI:
         custom_defaults: dict = {},
         tool_instance_name: str = None,
     ) -> None:
-        return self._input_TOPP_impl(
-            topp_tool_name=topp_tool_name,
-            num_cols=num_cols,
-            exclude_parameters=exclude_parameters,
-            include_parameters=include_parameters,
-            flag_parameters=flag_parameters,
-            display_tool_name=display_tool_name,
-            display_subsections=display_subsections,
-            display_subsection_tabs=display_subsection_tabs,
-            custom_defaults=custom_defaults,
-            tool_instance_name=tool_instance_name,
+        self._input_TOPP_impl(
+            topp_tool_name, num_cols, exclude_parameters, include_parameters,
+            flag_parameters, display_tool_name, display_subsections,
+            display_subsection_tabs, custom_defaults, tool_instance_name,
         )
 
     def _input_TOPP_impl(
@@ -905,27 +906,7 @@ class StreamlitUI:
         custom_defaults: dict = {},
         tool_instance_name: str = None,
     ) -> None:
-        """
-        Generates input widgets for TOPP tool parameters dynamically based on the tool's
-        .ini file. Supports excluding specific parameters and adjusting the layout.
-        File input and output parameters are excluded.
-
-        Args:
-            topp_tool_name (str): The name of the TOPP tool for which to generate inputs.
-            num_cols (int, optional): Number of columns to use for the layout. Defaults to 3.
-            exclude_parameters (List[str], optional): List of parameter names to exclude from the widget. Defaults to an empty list.
-            include_parameters (List[str], optional): List of parameter names to include in the widget. Defaults to an empty list.
-            display_tool_name (bool, optional): Whether to display the TOPP tool name. Defaults to True.
-            display_subsections (bool, optional): Whether to split parameters into subsections based on the prefix. Defaults to True.
-            display_subsection_tabs (bool, optional): Whether to display main subsections in separate tabs (if more than one main section). Defaults to False.
-            custom_defaults (dict, optional): Dictionary of custom defaults to use. Defaults to an empty dict.
-            tool_instance_name (str, optional): A unique instance name for this tool
-                invocation. Allows multiple instances of the same TOPP tool with
-                independent parameters (e.g., two IDFilter calls). If not provided,
-                defaults to topp_tool_name. The instance name is used for session
-                state keys and parameter storage, while topp_tool_name is used for
-                the actual tool executable and ini file creation.
-        """
+        """Internal implementation of input_TOPP - contains all the widget logic."""
         # Default instance name to the tool name when not provided
         if tool_instance_name is None:
             tool_instance_name = topp_tool_name
