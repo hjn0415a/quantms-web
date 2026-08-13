@@ -33,10 +33,10 @@ if not quant_dir.exists():
     st.page_link("content/workflow_run.py", label="Go to Run", icon="🚀")
     st.stop()
 
-csv_files = sorted(quant_dir.glob("*.csv"))
+csv_files = sorted(quant_dir.glob("*.csv" if analysis_mode == "LFQ" else "*.tsv"))
 
 if not csv_files:
-    st.info("No CSV files found in the quantification directory.")
+    st.info("No quantification result files found in the quantification directory.")
     st.stop()
 
 csv_file = csv_files[0]
@@ -93,7 +93,10 @@ def render_protein_table(pivot_df, is_lfq=True):
 protein_tab, psm_tab = st.tabs(["Protein Table", "PSM-level Quantification Table"])
 
 try:
-    df = pd.read_csv(csv_file)
+    if analysis_mode == "LFQ":
+        df = pd.read_csv(csv_file)
+    else:
+        df = pd.read_csv(csv_file, sep="\t", comment="#", engine="python")
 
     if df.empty:
         st.info("No data found in this file.")

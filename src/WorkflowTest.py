@@ -506,7 +506,15 @@ class WorkflowTest(WorkflowManager):
                 "ProteinInference",
                 custom_defaults={
                     "threads": 8,
-                    "picked_decoy_string": "DECOY_",
+                    # Must match the decoy prefix DecoyDatabase actually generated,
+                    # not TOPP's own hardcoded "DECOY_" default - a mismatch here means
+                    # ProteinInference sees zero decoys and crashes during target-decoy
+                    # q-value calculation. DecoyDatabase's decoy_string is set via
+                    # custom_defaults (no explicit tool_instance_name, so it lives under
+                    # params["_defaults"]["DecoyDatabase"]), which self.params alone
+                    # doesn't see until the user overrides it - get_merged_params()
+                    # resolves the full defaults-then-overrides chain.
+                    "picked_decoy_string": self.parameter_manager.get_merged_params("DecoyDatabase").get("decoy_string", "rev_"),
                     "picked_fdr": "true",
                     "protein_fdr": "true",
                     "Algorithm:use_shared_peptides": "true",
@@ -1197,7 +1205,7 @@ class WorkflowTest(WorkflowManager):
             protein_id = str(protein_dir / "ID_mapper_merge_epi.consensusXML")
             protein_filter = str(protein_dir / "ID_mapper_merge_epi_filter.consensusXML")
             protein_resolved = str(protein_dir / "ID_mapper_merge_epi_filter_resconf.consensusXML")
-            consensus_out = str(quant_dir / "openms_design_protein_openms.csv") 
+            consensus_out = str(quant_dir / "openms_design_protein_openms.tsv")
 
             # --- IsobaricAnalyzer ---
             self.logger.log("🏷️ Running isobaric labeling analysis...")

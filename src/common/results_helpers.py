@@ -281,7 +281,7 @@ def load_abundance_data(workspace_path: str, csv_mtime: float, params_mtime: flo
         if not quant_dir.exists():
             return None
 
-        csv_files = sorted(quant_dir.glob("*.csv"))
+        csv_files = sorted(quant_dir.glob("*.tsv"))
         if not csv_files:
             return None
 
@@ -371,7 +371,9 @@ def get_abundance_data(workspace: Path) -> tuple | None:
     if not quant_dir.exists():
         return None
 
-    csv_files = sorted(quant_dir.glob("*.csv"))
+    analysis_mode = ParameterManager(workflow_dir, "TOPP Workflow").get_parameters_from_json().get("analysis-mode", "LFQ")
+    pattern = "*.csv" if analysis_mode == "LFQ" else "*.tsv"
+    csv_files = sorted(quant_dir.glob(pattern))
     if not csv_files:
         return None
 
